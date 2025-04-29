@@ -73,15 +73,9 @@ export async function applyOps(ops: ActionOp[]): Promise<void> {
         if (op.type === "write" && op.values) {
           targetRange.values = op.values;
         } else if (op.type === "formula" && op.formula) {
-          // If op.range is a single cell, formulas should be a 2D array
-          if (targetRange.rowCount === 1 && targetRange.columnCount === 1) {
-            targetRange.formulas = [[op.formula]];
-          } else {
-            // If the range is larger, fill all cells with the formula (may be improved)
-            targetRange.formulas = Array(targetRange.rowCount)
-              .fill([])
-              .map(() => Array(targetRange.columnCount).fill(op.formula));
-          }
+          // Set the formulas for the entire range using a 2D array.
+          // Providing [[formula]] should broadcast to the entire range.
+          targetRange.formulas = [[op.formula]];
         } else {
           console.warn(`Unknown op type or missing data for op:`, op);
         }
