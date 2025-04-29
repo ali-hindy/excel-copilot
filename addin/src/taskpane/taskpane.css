@@ -16,16 +16,112 @@
      padding: 0;
  }
  
- .ms-welcome__header {
-    padding: 20px;
-    padding-bottom: 30px;
-    padding-top: 100px;
-    display: -webkit-flex;
+ .ms-welcome__header-outer {
+    padding: 32px 0;
     display: flex;
-    -webkit-flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .ms-welcome__header-outer {
+    padding: 12px 0;
+  }
+}
+
+.ms-welcome__header {
+    padding: 32px 32px 40px 32px;
+    margin: 0 auto;
+    display: flex;
     flex-direction: column;
     align-items: center;
- }
+    background: rgba(255, 255, 255, 0.30);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.40);
+    max-width: 480px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .ms-welcome__header {
+    padding: 16px 8vw 24px 8vw;
+    margin: 16px 0;
+    max-width: 98vw;
+  }
+}
+
+/* ChatGPT-style input bar */
+.gpt-input-bar {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 1.5px solid #ececec;
+  border-radius: 32px;
+  box-shadow: 0 2px 16px 0 rgba(0,0,0,0.06);
+  padding: 8px 14px 8px 18px;
+  margin: 24px 0 8px 0;
+  width: 100%;
+  max-width: 600px;
+  box-sizing: border-box;
+}
+.gpt-input {
+  flex: 1;
+  font-size: 1.13rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 8px 0;
+  color: #222;
+}
+.gpt-input::placeholder {
+  color: #bbb;
+  font-weight: 400;
+}
+.gpt-send-btn {
+  background: #f4f4f4;
+  border: none;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  margin-left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 6px 0 rgba(0,0,0,0.08);
+  transition: background 0.15s;
+}
+.gpt-send-btn:hover {
+  background: #e7e7e7;
+}
+.gpt-send-icon {
+  font-size: 1.3rem;
+  color: #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 600px) {
+  .gpt-input-bar {
+    padding: 7px 4vw 7px 5vw;
+    max-width: 98vw;
+  }
+  .gpt-send-btn {
+    width: 34px;
+    height: 34px;
+    margin-left: 6px;
+  }
+  .gpt-input {
+    font-size: 1rem;
+  }
+}
+
 
  .ms-welcome__main {
     display: -webkit-flex;
