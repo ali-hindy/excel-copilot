@@ -5,8 +5,7 @@
 
 /* global console, document, Excel, Office */
 
-import { readSheet } from "../SheetConnector";
-// import { applyOps, ActionOp } from "../SheetConnector"; // Uncomment when needed
+import { readSheet, applyOps, ActionOp } from "../SheetConnector";
 
 // Placeholder type if needed elsewhere, though run() won't use it now
 // interface ActionOp { id: string; range: string; type: string; values?: any[][]; formula?: string; note?: string; }
@@ -23,13 +22,13 @@ Office.onReady((info) => {
 
     const runButton = document.getElementById("run");
     if (runButton) {
-        runButton.onclick = run;
+      runButton.onclick = run;
     }
     // Add click listener for the Apply button
-    // const applyButton = document.getElementById("apply-ops");
-    // if (applyButton) { // Keep disabled
-    //     applyButton.onclick = handleApplyOps;
-    // }
+    const applyButton = document.getElementById("apply-ops");
+    if (applyButton) {
+      (applyButton as HTMLButtonElement).onclick = handleApplyOps;
+    }
   }
 });
 
@@ -44,133 +43,165 @@ const applyOpsButton = document.getElementById("apply-ops");
 const errorMessageDiv = document.getElementById("error-message");
 
 async function run() {
-    // --- Restoring Fetch & Render Logic ---
-    console.log("Taskpane: Run button clicked");
+  // --- Restoring Fetch & Render Logic ---
+  console.log("Taskpane: Run button clicked");
 
-    // Clear previous errors and hide preview
-    if (errorMessageDiv) errorMessageDiv.style.display = "none";
-    if (previewPane) previewPane.style.display = "none";
-    if (previewOpsList) previewOpsList.innerHTML = ''; // Clear previous ops
-    if (applyOpsButton) applyOpsButton.style.display = "none"; // Keep apply hidden
-    currentOps = []; // Clear previous ops
+  // Clear previous errors and hide preview
+  if (errorMessageDiv) errorMessageDiv.style.display = "none";
+  if (previewPane) previewPane.style.display = "none";
+  if (previewOpsList) previewOpsList.innerHTML = ""; // Clear previous ops
+  if (applyOpsButton) applyOpsButton.style.display = "none"; // Keep apply hidden
+  currentOps = []; // Clear previous ops
 
-    const promptText = promptInput?.value || '';
-    if (!promptText.trim()) {
-        if (errorMessageDiv) {
-            errorMessageDiv.innerText = "Please enter a prompt.";
-            errorMessageDiv.style.display = "block";
-        }
-        return;
+  const promptText = promptInput?.value || "";
+  if (!promptText.trim()) {
+    if (errorMessageDiv) {
+      errorMessageDiv.innerText = "Please enter a prompt.";
+      errorMessageDiv.style.display = "block";
     }
+    return;
+  }
 
-    // Show loading state in preview pane
-    if (previewPane) previewPane.style.display = "block";
-    if (previewOpsList) previewOpsList.innerHTML = '<li class="ms-ListItem">Sending prompt to server... (using placeholder sheet data)</li>';
+  // Show loading state in preview pane
+  if (previewPane) previewPane.style.display = "block";
+  if (previewOpsList)
+    previewOpsList.innerHTML =
+      '<li class="ms-ListItem">Sending prompt to server... (using placeholder sheet data)</li>';
 
+  try {
+    // PHASE 2: Read the actual sheet data
+    if (previewOpsList)
+      previewOpsList.innerHTML = '<li class="ms-ListItem">Reading sheet data...</li>';
+    let sheetData: string[][];
     try {
-        // PHASE 2: Read the actual sheet data
-        if (previewOpsList) previewOpsList.innerHTML = '<li class="ms-ListItem">Reading sheet data...</li>';
-        let sheetData: string[][];
-        try {
-            sheetData = (await readSheet()).map(row => row.map(cell => String(cell)));
-            console.log("Taskpane: Read sheet data (all stringified):", sheetData);
-        } catch (readErr) {
-            console.error("Error reading sheet:", readErr);
-            if (errorMessageDiv) {
-                errorMessageDiv.innerText = `Error reading sheet: ${readErr.message || readErr}`;
-                errorMessageDiv.style.display = "block";
-            }
-            return;
-        }
-        const requestBody = {
-            prompt: promptText,
-            sheet: sheetData // Use actual sheet data
-        };
-        console.log(`Taskpane: Preparing to fetch from https://efa332809648.ngrok.app/plan with body:`, requestBody);
-
-        // Phase 3/4: Call Local LLM Server
-        const response = await fetch("https://efa332809648.ngrok.app/plan", {
-            method: "POST",
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        console.log(`Taskpane: Fetch response received. Status: ${response.status}`);
-
-        if (!response.ok) {
-            let errorBody = "Server returned an error.";
-            try {
-                 console.log("Taskpane: Fetch response not OK. Trying to read error body...");
-                const errorJson = await response.json();
-                 console.log("Taskpane: Server error body JSON:", errorJson);
-                errorBody = errorJson.detail || JSON.stringify(errorJson);
-            } catch (e) {
-                 console.log("Taskpane: Could not read server error body as JSON.");
-                 /* Ignore */
-            }
-            throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`);
-        }
-
-        console.log("Taskpane: Fetch response OK. Reading response JSON...");
-        const result = await response.json();
-        console.log("Taskpane: Received plan JSON from server:", result);
-
-        // Store and Render Ops
-        currentOps = result.ops || []; // Use any[] type
-        console.log("Taskpane: Stored ops. Preparing to render...");
-
-        // Phase 5: Render Preview Pane
-        if (previewOpsList) {
-            previewOpsList.innerHTML = ''; // Clear loading message
-            if (currentOps.length > 0) {
-                currentOps.forEach((op: any) => { // Use op: any
-                    const listItem = document.createElement('li');
-                    listItem.className = 'ms-ListItem';
-                    // TODO P6: Add checkboxes for selection (when ActionOp type is back)
-                    const opDescription = op.values
-                        ? `values: ${JSON.stringify(op.values).substring(0, 50)}...`
-                        : `formula: ${op.formula}`;
-                    listItem.innerHTML = `
-                        <span class="ms-font-m"><b>(${op.id}) ${op.type?.toUpperCase()} ${op.range}</b></span><br/>
-                        <span class="ms-font-s">${opDescription || ''}</span>
-                        ${op.note ? `<br/><span class="ms-font-s"><i>Note: ${op.note}</i></span>` : ''}
-                    `;
-                    previewOpsList.appendChild(listItem);
-                });
-                // Keep apply button hidden as listener is disabled
-                // if (applyOpsButton) applyOpsButton.style.display = "block";
-            } else {
-                previewOpsList.innerHTML = '<li class="ms-ListItem">No operations suggested.</li>';
-            }
-             console.log("Taskpane: Rendering complete.");
-        }
-
-    } catch (error) {
-        console.error("--- Taskpane: Error caught in run() --- ");
-        console.error("Error Name:", error.name)
-        console.error("Error Message:", error.message)
-        console.error("Full Error Object:", error);
-        if (errorMessageDiv) {
-            errorMessageDiv.innerText = `Error: ${error.message || error}`;
-            errorMessageDiv.style.color = "red";
-            errorMessageDiv.style.display = "block";
-            errorMessageDiv.style.whiteSpace = "pre-wrap";
-            errorMessageDiv.style.border = "none";
-            errorMessageDiv.style.padding = "0";
-            errorMessageDiv.style.marginTop = "10px";
-        }
-        // Hide loading/preview state on error
-        if (previewOpsList) previewOpsList.innerHTML = '';
-        if (previewPane) previewPane.style.display = "none";
+      sheetData = (await readSheet()).map((row) => row.map((cell) => String(cell)));
+      console.log("Taskpane: Read sheet data (all stringified):", sheetData);
+    } catch (readErr) {
+      console.error("Error reading sheet:", readErr);
+      if (errorMessageDiv) {
+        errorMessageDiv.innerText = `Error reading sheet: ${readErr.message || readErr}`;
+        errorMessageDiv.style.display = "block";
+      }
+      return;
     }
-    // --- End Restored Logic ---
+    const requestBody = {
+      prompt: promptText,
+      sheet: sheetData, // Use actual sheet data
+    };
+    console.log(
+      `Taskpane: Preparing to fetch from https://efa332809648.ngrok.app/plan with body:`,
+      requestBody
+    );
+
+    // Phase 3/4: Call Local LLM Server
+    const response = await fetch("https://efa332809648.ngrok.app/plan", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    console.log(`Taskpane: Fetch response received. Status: ${response.status}`);
+
+    if (!response.ok) {
+      let errorBody = "Server returned an error.";
+      try {
+        console.log("Taskpane: Fetch response not OK. Trying to read error body...");
+        const errorJson = await response.json();
+        console.log("Taskpane: Server error body JSON:", errorJson);
+        errorBody = errorJson.detail || JSON.stringify(errorJson);
+      } catch (e) {
+        console.log("Taskpane: Could not read server error body as JSON.");
+        /* Ignore */
+      }
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`);
+    }
+
+    console.log("Taskpane: Fetch response OK. Reading response JSON...");
+    const result = await response.json();
+    console.log("Taskpane: Received plan JSON from server:", result);
+
+    // Store and Render Ops
+    const ops: ActionOp[] = result.ops || [];
+    currentOps = ops;
+    if (previewOpsList) {
+      if (ops.length === 0) {
+        previewOpsList.innerHTML = '<li class="ms-ListItem">No operations suggested.</li>';
+        if (applyOpsButton) applyOpsButton.style.display = "none";
+      } else {
+        previewOpsList.innerHTML = ops
+          .map(
+            (op, idx) => `
+            <li class="ms-ListItem">
+                <input type="checkbox" class="op-checkbox" id="op-${idx}" checked />
+                <label for="op-${idx}">
+                    <b>(${idx + 1})</b> <code>${op.type === "write" ? `Write ${op.range}` : `Formula ${op.range}`}</code>
+                    ${op.values ? `→ ${JSON.stringify(op.values)}` : op.formula ? `= ${op.formula}` : ""}
+                    ${op.note ? ` — <i>${op.note}</i>` : ""}
+                </label>
+            </li>`
+          )
+          .join("");
+        if (applyOpsButton) {
+          applyOpsButton.style.display = "block";
+          (applyOpsButton as HTMLButtonElement).disabled = false;
+        }
+      }
+    }
+    // Removed duplicate rendering. Only the checkbox rendering is kept above.
+  } catch (error) {
+    console.error("--- Taskpane: Error caught in run() --- ");
+    console.error("Error Name:", error.name);
+    console.error("Error Message:", error.message);
+    console.error("Full Error Object:", error);
+    if (errorMessageDiv) {
+      errorMessageDiv.innerText = `Error: ${error.message || error}`;
+      errorMessageDiv.style.color = "red";
+      errorMessageDiv.style.display = "block";
+      errorMessageDiv.style.whiteSpace = "pre-wrap";
+      errorMessageDiv.style.border = "none";
+      errorMessageDiv.style.padding = "0";
+      errorMessageDiv.style.marginTop = "10px";
+    }
+    // Hide loading/preview state on error
+    if (previewOpsList) previewOpsList.innerHTML = "";
+    if (previewPane) previewPane.style.display = "none";
+  }
+  // --- End Restored Logic ---
 }
 
-// --- handleApplyOps function commented out as it depends on import ---
-/*
 async function handleApplyOps() {
-    // ... (implementation depends on applyOps and currentOps)
+  // Gather checked ops
+  const checkedOps: ActionOp[] = [];
+  const checkboxes = document.querySelectorAll(".op-checkbox");
+  checkboxes.forEach((cb, idx) => {
+    if ((cb as HTMLInputElement).checked) {
+      checkedOps.push(currentOps[idx]);
+    }
+  });
+  if (checkedOps.length === 0) {
+    if (errorMessageDiv) {
+      errorMessageDiv.innerText = "Please select at least one operation to apply.";
+      errorMessageDiv.style.display = "block";
+    }
+    return;
+  }
+  if (applyOpsButton) (applyOpsButton as HTMLButtonElement).disabled = true;
+  try {
+    await applyOps(checkedOps);
+    if (errorMessageDiv) {
+      errorMessageDiv.innerText = `Successfully applied ${checkedOps.length} operation(s)!`;
+      errorMessageDiv.style.color = "green";
+      errorMessageDiv.style.display = "block";
+    }
+  } catch (error) {
+    if (errorMessageDiv) {
+      errorMessageDiv.innerText = `Error applying ops: ${error.message || error}`;
+      errorMessageDiv.style.color = "red";
+      errorMessageDiv.style.display = "block";
+    }
+  } finally {
+    if (applyOpsButton) (applyOpsButton as HTMLButtonElement).disabled = false;
+  }
 }
-*/

@@ -67,24 +67,26 @@ export async function applyOps(ops: ActionOp[]): Promise<void> {
         await Excel.run(async (context) => {
             const sheet = context.workbook.worksheets.getActiveWorksheet();
 
-            // --- Hardcoded operation for P2 Testing ---
-            // Example: Write a value to cell D1
-            const testRange = sheet.getRange("D1"); 
-            testRange.values = [["P2 Test Write"]];
-            testRange.format.font.bold = true;
-            console.log("Applied hardcoded write to D1.");
-            // ----------------------------------------
-
-            // TODO P6: Iterate through `ops` and apply them dynamically
-            // for (const op of ops) {
-            //     const targetRange = sheet.getRange(op.range);
-            //     if (op.type === "write" && op.values) {
-            //         targetRange.values = op.values;
-            //     } else if (op.type === "formula" && op.formula) {
-            //         targetRange.formulas = [[op.formula]]; // Assuming single cell formula for now
-            //     }
-            //     // Add more logic for formatting, notes, etc.
-            // }
+            // Iterate through `ops` and apply them dynamically
+            for (const op of ops) {
+                const targetRange = sheet.getRange(op.range);
+                if (op.type === "write" && op.values) {
+                    targetRange.values = op.values;
+                } else if (op.type === "formula" && op.formula) {
+                    // If op.range is a single cell, formulas should be a 2D array
+                    if (targetRange.rowCount === 1 && targetRange.columnCount === 1) {
+                        targetRange.formulas = [[op.formula]];
+                    } else {
+                        // If the range is larger, fill all cells with the formula (may be improved)
+                        targetRange.formulas = Array(targetRange.rowCount)
+                            .fill([])
+                            .map(() => Array(targetRange.columnCount).fill(op.formula));
+                    }
+                } else {
+                    console.warn(`Unknown op type or missing data for op:`, op);
+                }
+                // Optionally: handle op.note or formatting here
+            }
 
             await context.sync();
         });
