@@ -5,7 +5,8 @@
 
 /* global console, document, Excel, Office */
 
-// import { readSheet, applyOps, ActionOp } from "../SheetConnector"; // Temporarily remove import
+import { readSheet } from "../SheetConnector";
+// import { applyOps, ActionOp } from "../SheetConnector"; // Uncomment when needed
 
 // Placeholder type if needed elsewhere, though run() won't use it now
 // interface ActionOp { id: string; range: string; type: string; values?: any[][]; formula?: string; note?: string; }
@@ -15,17 +16,17 @@ Office.onReady((info) => {
     // Hide the initial message
     const sideLoadMsg = document.getElementById("sideload-msg");
     if (sideLoadMsg) sideLoadMsg.style.display = "none";
-    
+
     // Show the main app body by removing the inline display:none
     const appBody = document.getElementById("app-body");
     if (appBody) appBody.style.display = ""; // Let CSS handle display (block, flex, etc.)
-    
+
     const runButton = document.getElementById("run");
     if (runButton) {
         runButton.onclick = run;
     }
     // Add click listener for the Apply button
-    // const applyButton = document.getElementById("apply-ops"); 
+    // const applyButton = document.getElementById("apply-ops");
     // if (applyButton) { // Keep disabled
     //     applyButton.onclick = handleApplyOps;
     // }
@@ -43,7 +44,7 @@ const applyOpsButton = document.getElementById("apply-ops");
 const errorMessageDiv = document.getElementById("error-message");
 
 async function run() {
-    // --- Restoring Fetch & Render Logic --- 
+    // --- Restoring Fetch & Render Logic ---
     console.log("Taskpane: Run button clicked");
 
     // Clear previous errors and hide preview
@@ -64,28 +65,38 @@ async function run() {
 
     // Show loading state in preview pane
     if (previewPane) previewPane.style.display = "block";
-    if (previewOpsList) previewOpsList.innerHTML = '<li class="ms-ListItem">Sending prompt to server... (using placeholder sheet data)</li>'; 
+    if (previewOpsList) previewOpsList.innerHTML = '<li class="ms-ListItem">Sending prompt to server... (using placeholder sheet data)</li>';
 
     try {
-        // Phase 2 Skipped: Use Placeholder Data
-        const placeholderSheetData: string[][] = [["Placeholder", "Data"],["Row1", "Value1"]]; 
-        console.log("Taskpane: Using placeholder data:", placeholderSheetData);
-        
+        // PHASE 2: Read the actual sheet data
+        if (previewOpsList) previewOpsList.innerHTML = '<li class="ms-ListItem">Reading sheet data...</li>';
+        let sheetData: string[][];
+        try {
+            sheetData = (await readSheet()).map(row => row.map(cell => String(cell)));
+            console.log("Taskpane: Read sheet data (all stringified):", sheetData);
+        } catch (readErr) {
+            console.error("Error reading sheet:", readErr);
+            if (errorMessageDiv) {
+                errorMessageDiv.innerText = `Error reading sheet: ${readErr.message || readErr}`;
+                errorMessageDiv.style.display = "block";
+            }
+            return;
+        }
         const requestBody = {
-             prompt: promptText,
-             sheet: placeholderSheetData // Use placeholder sheet data
+            prompt: promptText,
+            sheet: sheetData // Use actual sheet data
         };
-        console.log(`Taskpane: Preparing to fetch from http://127.0.0.1:8000/plan with body:`, requestBody);
+        console.log(`Taskpane: Preparing to fetch from https://efa332809648.ngrok.app/plan with body:`, requestBody);
 
         // Phase 3/4: Call Local LLM Server
-        const response = await fetch("http://127.0.0.1:8000/plan", {
+        const response = await fetch("https://efa332809648.ngrok.app/plan", {
             method: "POST",
             headers: {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody)
         });
-        
+
         console.log(`Taskpane: Fetch response received. Status: ${response.status}`);
 
         if (!response.ok) {
@@ -95,9 +106,9 @@ async function run() {
                 const errorJson = await response.json();
                  console.log("Taskpane: Server error body JSON:", errorJson);
                 errorBody = errorJson.detail || JSON.stringify(errorJson);
-            } catch (e) { 
+            } catch (e) {
                  console.log("Taskpane: Could not read server error body as JSON.");
-                 /* Ignore */ 
+                 /* Ignore */
             }
             throw new Error(`HTTP error! status: ${response.status}, message: ${errorBody}`);
         }
@@ -105,7 +116,7 @@ async function run() {
         console.log("Taskpane: Fetch response OK. Reading response JSON...");
         const result = await response.json();
         console.log("Taskpane: Received plan JSON from server:", result);
-        
+
         // Store and Render Ops
         currentOps = result.ops || []; // Use any[] type
         console.log("Taskpane: Stored ops. Preparing to render...");
@@ -118,7 +129,7 @@ async function run() {
                     const listItem = document.createElement('li');
                     listItem.className = 'ms-ListItem';
                     // TODO P6: Add checkboxes for selection (when ActionOp type is back)
-                    const opDescription = op.values 
+                    const opDescription = op.values
                         ? `values: ${JSON.stringify(op.values).substring(0, 50)}...`
                         : `formula: ${op.formula}`;
                     listItem.innerHTML = `
@@ -129,7 +140,7 @@ async function run() {
                     previewOpsList.appendChild(listItem);
                 });
                 // Keep apply button hidden as listener is disabled
-                // if (applyOpsButton) applyOpsButton.style.display = "block"; 
+                // if (applyOpsButton) applyOpsButton.style.display = "block";
             } else {
                 previewOpsList.innerHTML = '<li class="ms-ListItem">No operations suggested.</li>';
             }
@@ -145,20 +156,20 @@ async function run() {
             errorMessageDiv.innerText = `Error: ${error.message || error}`;
             errorMessageDiv.style.color = "red";
             errorMessageDiv.style.display = "block";
-            errorMessageDiv.style.whiteSpace = "pre-wrap"; 
+            errorMessageDiv.style.whiteSpace = "pre-wrap";
             errorMessageDiv.style.border = "none";
             errorMessageDiv.style.padding = "0";
-            errorMessageDiv.style.marginTop = "10px"; 
+            errorMessageDiv.style.marginTop = "10px";
         }
         // Hide loading/preview state on error
-        if (previewOpsList) previewOpsList.innerHTML = ''; 
+        if (previewOpsList) previewOpsList.innerHTML = '';
         if (previewPane) previewPane.style.display = "none";
     }
     // --- End Restored Logic ---
 }
 
 // --- handleApplyOps function commented out as it depends on import ---
-/* 
+/*
 async function handleApplyOps() {
     // ... (implementation depends on applyOps and currentOps)
 }
