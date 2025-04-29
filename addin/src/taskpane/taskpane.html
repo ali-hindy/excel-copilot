@@ -4,10 +4,12 @@
 <!doctype html>
 <html>
   <head>
+    <!-- Montserrat font -->
+    <link rel="stylesheet" href="../../assets/montserrat.css" />
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Contoso Task Pane Add-in</title>
+    <title>Finstruct Taskpane Add In</title>
 
     <!-- Office JavaScript API -->
     <script
@@ -26,19 +28,7 @@
   </head>
 
   <body class="ms-font-m ms-welcome ms-Fabric">
-    <div class="ms-welcome__header-outer">
-      <header class="ms-welcome__header ms-bgColor-neutralLighter">
-      <img
-        width="350"
-        height="auto"
-        src="../../assets/chat-logo.png"
-        alt="Finstruct"
-        title="Finstruct"
-      />
-      <!-- <h1 class="ms-font-su">Welcome</h1> -->
-    </header>
-    </div>
-    <section id="sideload-msg" class="ms-welcome__header">
+    <section id="sideload-msg" class="glassmorphism-container">
       <h2 class="ms-font-xl">
         Please
         <a
@@ -49,38 +39,55 @@
         your add-in to see app body.
       </h2>
     </section>
-    <main id="app-body" class="ms-welcome__header ms-bgColor-neutralLighter" style="display: none">
+    <main id="app-body" class="main flex flex-col h-full w-full" style="display: none">
       <!-- Replace default content with our AI Assistant UI -->
-      <h2 class="ms-font-xl">AI Assistant</h2>
-      <p class="ms-font-m">Enter instructions to transform the current sheet:</p>
+      <div class="logo-container">
+        <div class="glassmorphism-container flex flex-col items-center">
+          <img
+            width="350"
+            height="auto"
+            src="../../assets/chat-logo.png"
+            alt="Finstruct"
+            title="Finstruct"
+          />
+          <h1 class="ms-font-m">Transform the current sheet</h1>
+        </div>
 
-      <div class="gpt-input-bar">
-  <input type="text" id="prompt-input" class="gpt-input" placeholder="e.g., Summarize sales by region" autocomplete="off" />
-  <button id="run" class="gpt-send-btn" title="Send">
-    <span class="gpt-send-icon">&#x27A4;</span>
-  </button>
-</div>
+        <div id="preview-pane" style="margin-top: 20px; display: none">
+          <h3 class="ms-font-l">Proposed Changes:</h3>
+          <ul id="preview-ops-list" class="ms-List">
+            <!-- Preview items will be added here dynamically -->
+            <li class="ms-ListItem">Loading...</li>
+          </ul>
+          <div
+            role="button"
+            id="apply-ops"
+            class="ms-Button ms-Button--primary"
+            style="margin-top: 10px; display: none"
+          >
+            <span class="ms-Button-label">Apply Approved</span>
+          </div>
+        </div>
 
-      <div id="preview-pane" style="margin-top: 20px; display: none">
-        <h3 class="ms-font-l">Proposed Changes:</h3>
-        <ul id="preview-ops-list" class="ms-List">
-          <!-- Preview items will be added here dynamically -->
-          <li class="ms-ListItem">Loading...</li>
-        </ul>
-        <div
-          role="button"
-          id="apply-ops"
-          class="ms-Button ms-Button--primary"
-          style="margin-top: 10px; display: none"
-        >
-          <span class="ms-Button-label">Apply Approved</span>
+        <div id="error-message" style="color: red; margin-top: 10px; display: none">
+          <!-- Error messages will appear here -->
         </div>
       </div>
-
-      <div id="error-message" style="color: red; margin-top: 10px; display: none">
-        <!-- Error messages will appear here -->
-      </div>
       <!-- End of AI Assistant UI -->
+      <div class="input-container">
+        <div class="gpt-input-bar">
+          <input
+            type="text"
+            id="prompt-input"
+            class="gpt-input"
+            placeholder="e.g., Summarize sales by region"
+            autocomplete="off"
+          />
+          <button id="run" class="gpt-send-btn" title="Send">
+            <span class="gpt-send-icon">&#x27A4;</span>
+          </button>
+        </div>
+      </div>
     </main>
   </body>
 </html>
