@@ -105,12 +105,11 @@ You need to run both the backend server and the frontend dev server simultaneous
     *   Click `Upload`.
 2.  **Open Task Pane:** Click the "AI Assistant" button (or similar name, based on `manifest.xml`) on the Excel Ribbon (usually the Home tab) to open the task pane.
 3.  **Enter Prompt:** Type your instructions for transforming the sheet into the text area.
-4.  **Click Run:** The add-in will send the prompt (and placeholder sheet data) to the local LLM server.
+4.  **Click Run:** The add-in will send your prompt and the **actual contents of the current Excel sheet** (currently, a fixed range for testing) to the local LLM server.
 5.  **View Suggestions:** The proposed operations from the LLM will appear under "Proposed Changes:".
 
 ## Current Status & Limitations (IMPORTANT)
 
-*   **Excel Interaction Disabled:** Due to a persistent `Error: Load failed` when attempting to use the Office JavaScript API (`Excel.run`) to read from or write to the sheet, this functionality is currently **disabled** in the add-in code (`addin/src/taskpane.ts` and `addin/src/SheetConnector.ts`).
-*   **Placeholder Data:** The add-in sends **static placeholder data** instead of the actual sheet content to the backend LLM server. The LLM's response is based on this placeholder data and your prompt.
-*   **Apply Button Disabled:** The "Apply Approved" button appears but is non-functional because its click handler (which requires Excel interaction) is disabled.
-*   **Focus:** The current state allows testing the **Prompt -> LLM -> Parsed Suggestions -> UI Display** loop. Further investigation is needed to resolve the underlying `Excel.run` / "Load failed" issue before sheet interaction (Phase 2/6) can be re-enabled. 
+*   **Excel Sheet Reading Enabled:** The add-in now reads from the active Excel worksheet (currently a fixed range, e.g., `A1:C3` for testing) and sends this data to the backend LLM server. The LLM's response is based on your prompt and the real sheet content.
+*   **Apply Button Disabled:** The "Apply Approved" button appears but is non-functional because its click handler (which requires Excel interaction) is not yet enabled for dynamic ops.
+*   **Focus:** The current state allows testing the **Prompt -> Sheet Read -> LLM -> Parsed Suggestions -> UI Display** loop. Writing back to the sheet from approved suggestions ("Apply") will be enabled in a future phase.

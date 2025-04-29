@@ -1,63 +1,93 @@
 <!-- Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT License. -->
 <!-- This file shows how to design a first-run page that provides a welcome screen to the user about the features of the add-in. -->
 
-<!DOCTYPE html>
+<!doctype html>
 <html>
-
-<head>
+  <head>
+    <!-- Montserrat font -->
+    <link rel="stylesheet" href="../../assets/montserrat.css" />
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Contoso Task Pane Add-in</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Finstruct Taskpane Add In</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
     <!-- Office JavaScript API -->
-    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script
+      type="text/javascript"
+      src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"
+    ></script>
 
     <!-- For more information on Fluent UI, visit https://developer.microsoft.com/fluentui#/. -->
-    <link rel="stylesheet" href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"/>
+    <link
+      rel="stylesheet"
+      href="https://res-1.cdn.office.net/files/fabric-cdn-prod_20230815.002/office-ui-fabric-core/11.1.0/css/fabric.min.css"
+    />
 
     <!-- Template styles -->
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
-</head>
+  </head>
 
-<body class="ms-font-m ms-welcome ms-Fabric">
-    <header class="ms-welcome__header ms-bgColor-neutralLighter">
-        <img width="90" height="90" src="../../assets/logo-filled.png" alt="Contoso" title="Contoso" />
-        <h1 class="ms-font-su">Welcome</h1>
-    </header>
-    <section id="sideload-msg" class="ms-welcome__header">
-        <h2 class="ms-font-xl">Please <a target="_blank" href="https://learn.microsoft.com/office/dev/add-ins/testing/test-debug-office-add-ins#sideload-an-office-add-in-for-testing">sideload</a> your add-in to see app body.</h2>
+  <body class="ms-font-m ms-welcome ms-Fabric" style="background: #fff">
+    <section id="sideload-msg" class="glassmorphism-container">
+      <h2 class="ms-font-xl">
+        Please
+        <a
+          target="_blank"
+          href="https://learn.microsoft.com/office/dev/add-ins/testing/test-debug-office-add-ins#sideload-an-office-add-in-for-testing"
+          >sideload</a
+        >
+        your add-in to see app body.
+      </h2>
     </section>
-    <main id="app-body" class="ms-welcome__header ms-bgColor-neutralLighter" style="display: none;">
-        <!-- Replace default content with our AI Assistant UI -->
-        <h2 class="ms-font-xl">AI Assistant</h2>
-        <p class="ms-font-m">Enter instructions to transform the current sheet:</p>
-        
-        <div class="ms-TextField">
-          <label class="ms-Label" for="prompt-input">Prompt:</label>
-          <textarea class="ms-TextField-field" id="prompt-input" rows="5" placeholder="e.g., Summarize sales by region"></textarea>
+    <main id="app-body" class="main flex flex-col h-full w-full" style="display: none">
+      <!-- CTA and preview pane -->
+      <div class="logo-container">
+        <div class="flex flex-col items-center">
+          <h1 class="ms-font-m" style="text-align: center">Ready when you are.</h1>
         </div>
 
-        <div role="button" id="run" class="ms-Button ms-Button--primary" style="margin-top: 10px;">
-            <span class="ms-Button-label">Run</span>
-        </div>
-
-        <div id="preview-pane" style="margin-top: 20px; display: none;">
+        <div id="preview-pane" class="glassmorphism-container" style="display: none">
+          <div class="flex flex-col items-center">
             <h3 class="ms-font-l">Proposed Changes:</h3>
-            <ul id="preview-ops-list" class="ms-List">
-                <!-- Preview items will be added here dynamically -->
-                <li class="ms-ListItem">Loading...</li> 
+          </div>
+          <div class="flex flex-col items-center">
+            <ul id="preview-ops-list" class="flex" style="padding-bottom: 16px">
+              <!-- Preview items will be added here dynamically -->
+              <li class="flex">Loading...</li>
             </ul>
-            <div role="button" id="apply-ops" class="ms-Button ms-Button--primary" style="margin-top: 10px; display: none;">
-                <span class="ms-Button-label">Apply Approved</span>
-            </div>
+          </div>
+          <div
+            role="button"
+            id="apply-ops"
+            class="ms-Button ms-Button--primary"
+            style="margin-top: 10px; display: none"
+          >
+            <span class="ms-Button-label">Apply Approved</span>
+          </div>
         </div>
 
-        <div id="error-message" style="color: red; margin-top: 10px; display: none;">
-            <!-- Error messages will appear here -->
+        <div id="error-message" style="color: red; margin-top: 10px; display: none">
+          <!-- Error messages will appear here -->
         </div>
-        <!-- End of AI Assistant UI -->
+      </div>
+      <!-- ChatGPT-style input bar at the bottom of the page -->
+      <div class="input-container">
+        <div class="gpt-input-bar">
+          <input
+            type="text"
+            id="prompt-input"
+            class="gpt-input"
+            placeholder="e.g., Summarize sales by region"
+            autocomplete="off"
+          />
+          <button id="run" class="gpt-send-btn" title="Send">
+            <span class="gpt-send-icon">&#x27A4;</span>
+          </button>
+        </div>
+      </div>
     </main>
-</body>
-
+  </body>
 </html>
