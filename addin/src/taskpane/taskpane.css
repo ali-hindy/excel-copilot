@@ -113,3 +113,30 @@ h1.ms-font-m {
   align-items: center;
   justify-content: center;
 }
+
+#preview-ops-list {
+  max-height: 300px;
+  overflow-y: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+}
+
+.op-item {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.op-item:last-child {
+  border-bottom: none;
+}
+
+.op-checkbox {
+  margin-right: 8px;
+  margin-top: 3px;
+}
