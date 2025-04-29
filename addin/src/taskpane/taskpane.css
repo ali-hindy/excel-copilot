@@ -17,31 +17,6 @@ ul {
   padding: 0;
 }
 
-.h-full {
-  height: 100%;
-}
-.w-full {
-  width: 100%;
-}
-.flex {
-  display: flex;
-}
-.flex-col {
-  flex-direction: column;
-}
-.flex-row {
-  flex-direction: row;
-}
-.items-center {
-  align-items: center;
-}
-.justify-center {
-  justify-content: center;
-}
-.relative {
-  position: relative;
-}
-
 .logo-container {
   box-sizing: border-box;
   display: flex;
@@ -69,7 +44,6 @@ ul {
   flex-direction: column;
   align-items: center;
 }
-
 
 h1.ms-font-m {
   font-weight: 600;

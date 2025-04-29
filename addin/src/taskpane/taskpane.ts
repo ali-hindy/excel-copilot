@@ -133,14 +133,14 @@ async function run() {
         previewOpsList.innerHTML = ops
           .map(
             (op, idx) => `
-            <li class="ms-ListItem">
+            <div class="flex flex-row">
                 <input type="checkbox" class="op-checkbox" id="op-${idx}" checked />
                 <label for="op-${idx}">
                     <b>(${idx + 1})</b> <code>${op.type === "write" ? `Write ${op.range}` : `Formula ${op.range}`}</code>
                     ${op.values ? `→ ${JSON.stringify(op.values)}` : op.formula ? `= ${op.formula}` : ""}
                     ${op.note ? ` — <i>${op.note}</i>` : ""}
                 </label>
-            </li>`
+            </div>`
           )
           .join("");
         if (applyOpsButton) {
