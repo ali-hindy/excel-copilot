@@ -1,0 +1,101 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ValidationError
+from typing import List, Any # Added Any
+
+# Import LLM functions
+from model import generate_plan_raw_text, get_llm, parse_llm_output_to_ops # Added parser
+
+app = FastAPI()
+
+# --- Load LLM on startup (optional, but recommended) ---
+@app.on_event("startup")
+async def startup_event():
+    try:
+        get_llm() # Initialize and load the LLM
+    except FileNotFoundError as e:
+        print(f"STARTUP ERROR: {e}")
+        # You might want to prevent server startup or handle this differently
+    except Exception as e:
+        print(f"STARTUP ERROR: Could not load LLM - {e}")
+
+# --- CORS Middleware (Allow all for MVP) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"], # Allows all methods
+    allow_headers=["*"], # Allows all headers
+)
+
+# --- Request/Response Models ---
+class PlanRequest(BaseModel):
+    prompt: str
+    sheet: List[List[str]]
+
+class ActionOp(BaseModel):
+    id: str
+    range: str
+    type: str # "write" | "formula"
+    values: List[List[Any]] | None = None # Allow Any in values
+    formula: str | None = None
+    note: str | None = None
+
+class PlanResponse(BaseModel):
+    ops: List[ActionOp]
+    raw_llm_output: str | None = None # Keep raw output for debugging
+
+# --- API Endpoints ---
+@app.post("/plan", response_model=PlanResponse)
+async def create_plan(request: PlanRequest):
+    """
+    Receives the sheet data and user prompt, invokes the LLM,
+    parses the response, and returns the structured plan.
+    """
+    print(f"Received prompt: {request.prompt}")
+    print(f"Received sheet with {len(request.sheet)} rows.")
+
+    try:
+        # --- Phase 4: Call LLM --- 
+        raw_output = await generate_plan_raw_text(request.prompt, request.sheet)
+
+        # --- Phase 5: Parse LLM Output --- 
+        try:
+            parsed_op_dicts = parse_llm_output_to_ops(raw_output)
+            # Validate with Pydantic models
+            validated_ops = [ActionOp(**op) for op in parsed_op_dicts]
+            print(f"Successfully validated {len(validated_ops)} operations against Pydantic model.")
+            return PlanResponse(ops=validated_ops, raw_llm_output=raw_output)
+        
+        except (ValueError, TypeError, ValidationError) as parse_error: # Catch parsing/validation errors
+            print(f"ERROR: Failed to parse or validate LLM output - {parse_error}")
+            # Return empty ops list but include raw output for debugging
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Failed to parse/validate plan from LLM: {parse_error}"
+            )
+        except Exception as e:
+             print(f"ERROR: Unexpected error during parsing/validation - {e}")
+             raise HTTPException(status_code=500, detail=f"Unexpected error processing LLM response: {e}")
+
+    except FileNotFoundError as e:
+        print(f"ERROR: Model file not found - {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        print(f"ERROR: Failed to get plan from LLM - {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to process request: {e}")
+
+# --- Main Execution (for development) ---
+if __name__ == "__main__":
+    import uvicorn
+    # Ensure model is loaded before starting server if not using startup event
+    # try:
+    #     get_llm()
+    # except Exception as e:
+    #     print(f"Failed to load LLM on startup: {e}")
+    #     # Decide if you want to exit or continue without LLM
+    #     # exit(1)
+    
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True) 
