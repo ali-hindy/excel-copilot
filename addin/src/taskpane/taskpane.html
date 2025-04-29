@@ -27,7 +27,7 @@
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
   </head>
 
-  <body class="ms-font-m ms-welcome ms-Fabric">
+  <body class="ms-font-m ms-welcome ms-Fabric" style="background: #fff">
     <section id="sideload-msg" class="glassmorphism-container">
       <h2 class="ms-font-xl">
         Please
@@ -40,25 +40,22 @@
       </h2>
     </section>
     <main id="app-body" class="main flex flex-col h-full w-full" style="display: none">
-      <!-- Replace default content with our AI Assistant UI -->
+      <!-- CTA and preview pane -->
       <div class="logo-container">
-        <div class="glassmorphism-container flex flex-col items-center">
-          <img
-            width="350"
-            height="auto"
-            src="../../assets/chat-logo.png"
-            alt="Finstruct"
-            title="Finstruct"
-          />
-          <h1 class="ms-font-m">Transform the current sheet</h1>
+        <div class="flex flex-col items-center">
+          <h1 class="ms-font-m" style="text-align: center">Ready when you are.</h1>
         </div>
 
-        <div id="preview-pane" style="margin-top: 20px; display: none">
-          <h3 class="ms-font-l">Proposed Changes:</h3>
-          <ul id="preview-ops-list" class="ms-List">
-            <!-- Preview items will be added here dynamically -->
-            <li class="ms-ListItem">Loading...</li>
-          </ul>
+        <div id="preview-pane" class="glassmorphism-container" style="display: none">
+          <div class="flex flex-col items-center">
+            <h3 class="ms-font-l">Proposed Changes:</h3>
+          </div>
+          <div class="flex flex-col items-center">
+            <ul id="preview-ops-list" class="flex" style="padding-bottom: 16px">
+              <!-- Preview items will be added here dynamically -->
+              <li class="flex">Loading...</li>
+            </ul>
+          </div>
           <div
             role="button"
             id="apply-ops"
@@ -73,7 +70,7 @@
           <!-- Error messages will appear here -->
         </div>
       </div>
-      <!-- End of AI Assistant UI -->
+      <!-- ChatGPT-style input bar at the bottom of the page -->
       <div class="input-container">
         <div class="gpt-input-bar">
           <input
