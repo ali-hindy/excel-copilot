@@ -18,7 +18,7 @@ module.exports = async (env, options) => {
     devtool: "source-map",
     entry: {
       polyfill: ["core-js/stable", "regenerator-runtime/runtime"],
-      taskpane: ["./src/taskpane/taskpane.ts", "./src/taskpane/taskpane.html"],
+      taskpane: ["./src/taskpane/taskpane.tsx", "./src/taskpane/taskpane.html"],
       commands: "./src/commands/commands.ts",
     },
     output: {
@@ -26,17 +26,17 @@ module.exports = async (env, options) => {
       clean: true,
     },
     resolve: {
-      extensions: [".ts", ".html", ".js"],
+      extensions: [".ts", ".tsx", ".html", ".js"],
     },
     module: {
       rules: [
         {
-          test: /\.ts$/,
+          test: /\.tsx?$/,
           exclude: /node_modules/,
           use: {
             loader: "babel-loader",
             options: {
-              presets: ["@babel/preset-typescript"],
+              presets: ["@babel/preset-typescript", "@babel/preset-react"],
             },
           },
         },

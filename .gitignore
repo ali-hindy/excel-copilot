@@ -1,2 +1,14 @@
-/server/models/*
 *.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Node dependencies
+node_modules/
+
+# Build artifacts
+addin/dist/
+
+# Models (if intended to be ignored)
+/server/models/*
