@@ -14,42 +14,39 @@ N_CTX = 2048  # Context window size
 # --- Prompt Template (Initial Version for P4/P5) ---
 # This will be refined in Phase 5
 PROMPT_TEMPLATE = """
-[INST] You are an Excel assistant. The user has provided the following sheet data (as a JSON list of lists):
+[INST] You are an Excel assistant. Generate a plan to model a cap table based on the provided parameters and sheet data.
+
+Parameters:
+```json
+{slots}
+```
+
+Sheet Data:
 ```json
 {sheet_data}
 ```
 
-User instruction: "{user_prompt}"
-
-Based on the sheet and the instruction, generate a JSON list of operations to perform. Each operation must be an object with the following keys:
+Task: Generate a JSON list of operations to model the funding round described by the parameters, using the provided sheet data as context or a starting point. Each operation must be an object with the following keys:
 - "id": A unique string identifier for the operation (e.g., "op-1", "op-2").
 - "range": The Excel range in A1 notation (e.g., "A1", "B2:C5").
 - "type": Either "write", "formula", or "color".
 - "values": A list of lists containing the values to write (only for type "write", use null otherwise).
 - "formula": The formula string starting with '=' (only for type "formula", use null otherwise).
-- "color": The color to apply (only for type "color", use null otherwise). Colors can be:
-  - "red", "green", "blue", "yellow", "orange", "purple", "gray", "black", "white"
-  - Or a hex color code like "#FF0000" for red
+- "color": The color name (e.g., "blue", "green") or hex code (e.g., "#4F81BD") to apply (only for type "color", use null otherwise).
 - "note": An optional short string explaining the operation.
 
 IMPORTANT RULES:
-1. Be efficient - use ranges instead of individual cells when possible
-2. Limit operations to what's necessary to achieve the goal
-3. For writing multiple values, use a single operation with a range
-4. Maximum of 20 operations per plan
-5. Do not generate operations for cells outside the provided sheet data
-6. Ensure all operations are valid and necessary
-7. For color operations, specify the exact color requested or use standard color names
+1. Analyze the Parameters ({slots}) to understand the round details (roundType, amount, preMoney, poolPct).
+2. Use the Sheet Data ({sheet_data}) as the existing context. Your operations should modify or add to this data.
+3. Generate operations to set up headers, input parameters, calculate post-money valuation, share prices, and the final cap table structure based on the parameters.
+4. Be efficient - use ranges instead of individual cells when possible.
+5. Limit operations to what's necessary to achieve the goal.
+6. Maximum of 20 operations per plan.
+7. Ensure all operations are valid and necessary.
 8. Ensure proper JSON formatting:
-   - Use double quotes for strings
-   - Separate array elements with commas
-   - Close all brackets and braces
-   - No trailing commas
-9. If the user mentions any of these values, extract them:
-   - roundType: "Series A", "Seed", etc.
-   - amount: numeric value (e.g., 5000000 for $5M)
-   - preMoney: numeric value (e.g., 20000000 for $20M)
-   - poolPct: numeric value (e.g., 10 for 10%)
+   - Use double quotes for all keys and string values.
+   - Use null for optional fields that are not applicable.
+   - No trailing commas.
 
 Return *only* the JSON list of operations, enclosed in a single markdown ```json ... ``` block. Ensure the JSON is valid. [/INST]
 ```json
@@ -83,7 +80,7 @@ def get_llm():
 
 
 # --- Inference Function (P4 - Raw Text Output) ---
-async def generate_plan_raw_text(prompt: str, sheet_data: List[List[str]]) -> str:
+async def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]]) -> str:
     client = get_llm()
 
     # Simple JSON conversion for the sheet data
@@ -95,10 +92,12 @@ async def generate_plan_raw_text(prompt: str, sheet_data: List[List[str]]) -> st
         )
         sheet_json = sheet_json[:MAX_SHEET_CHARS] + "..."
 
-    full_prompt = PROMPT_TEMPLATE.format(sheet_data=sheet_json, user_prompt=prompt)
+    slots_json = json.dumps(slots)
+
+    full_prompt = PROMPT_TEMPLATE.format(sheet_data=sheet_json, slots=slots_json)
 
     print("\n--- Sending Prompt to LLM ---")
-    print("Prompt sent (see model.py for template)")
+    print("Prompt template: (see model.py)")
     print("-----------------------------\n")
 
     response = client.create_completion(

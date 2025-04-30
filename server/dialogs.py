@@ -16,6 +16,7 @@ class Session(BaseModel):
         "poolPct": None
     }
     history: List[Dict[str, str]] = []
+    last_prompted_slot: Optional[str] = None
 
     def __init__(self, **data):
         if 'session_id' not in data:
@@ -45,26 +46,32 @@ Current Slots:
 Conversation History:
 {history}
 
+Assistant's Last Question asked for slot: '{last_prompted_slot}'
+
 LATEST User Message: "{latest_message}"
 
 INSTRUCTIONS:
 1. Analyze ONLY the LATEST user message.
-2. Extract values EXPLICITLY mentioned. DO NOT GUESS.
-3. For 'amount' and 'preMoney', extract numeric value (e.g., 5000000).
-4. For 'poolPct', extract numeric value (e.g., 10).
-5. Return ONLY the JSON object.
-6. If no new information is found, return an empty JSON object: {{}}.
+2. If the user message seems to answer the Assistant's Last Question (for slot '{last_prompted_slot}'), prioritize extracting the value for that specific slot.
+3. Otherwise, extract any other slot values EXPLICITLY mentioned.
+4. For 'amount' and 'preMoney', extract numeric value (e.g., 5000000).
+5. For 'poolPct', extract numeric value (e.g., 10).
+6. Return ONLY the JSON object.
+7. If no new information is found, return an empty JSON object: {{}}.
 
-Example 1 (User says "$5M"):
+Example 1 (Assistant asked for 'amount', User says "$5M"):
 {{\"amount\": 5000000}}
 
-Example 2 (User says "Series A"):
+Example 2 (Assistant asked for 'preMoney', User says "20 million"):
+{{\"preMoney\": 20000000}}
+
+Example 3 (User says "Series A"):
 {{\"roundType\": \"Series A\"}}
 
-Example 3 (User says "hello"):
+Example 4 (Assistant asked for 'amount', User says "hello"):
 {{}}
 
-Generate the JSON output based ONLY on the LATEST User Message. [/INST]
+Generate the JSON output based ONLY on the LATEST User Message, prioritizing the '{last_prompted_slot}' slot if relevant. [/INST]
 """
 
 def extract_slots_from_message(message: str, session: Session) -> Dict[str, str]:
@@ -82,6 +89,7 @@ def extract_slots_from_message(message: str, session: Session) -> Dict[str, str]
             prompt = SLOT_EXTRACTION_PROMPT.format(
                 history=history_str,
                 slots=slots_str,
+                last_prompted_slot=session.last_prompted_slot or "None",
                 latest_message=latest_message
             )
         except KeyError as fmt_ke:
@@ -176,64 +184,6 @@ def extract_slots_from_message(message: str, session: Session) -> Dict[str, str]
              print(f"Returning empty dict due to error: {outer_e}")
              return {}
 
-NEXT_QUESTION_PROMPT = """[INST] You are an Excel Cap-Table AI assistant helping to collect information for a funding round.
-
-Current conversation history:
-{history}
-
-Current slot values:
-{slots}
-
-Based on the conversation and current slot values, ask exactly one question to get the next missing piece of information. Only ask about one missing slot at a time.
-
-Example response:
-What is the pre-money valuation? (e.g., $20M)
-[/INST]
-"""
-
-def get_next_question(session: Session) -> str:
-    """Use LLM to determine the next question to ask."""
-    try: # Outer try for the whole function
-        llm = get_llm()
-        
-        # Format the prompt with current context
-        history_str = "\n".join([f"{msg['role']}: {msg['message']}" for msg in session.history])
-        slots_str = json.dumps(session.slots, indent=2)
-        
-        prompt = NEXT_QUESTION_PROMPT.format(
-            history=history_str,
-            slots=slots_str
-        )
-        
-        # Specific try for LLM call
-        try:
-            response = llm.create_completion(
-                prompt=prompt,
-                max_tokens=100,
-                temperature=0.1,
-                stop=["[/INST]"],
-                echo=False
-            )
-        except Exception as llm_e:
-            print(f"ERROR during LLM call in get_next_question: {llm_e}")
-            raise # Re-raise the exception
-
-        # Specific try for response processing
-        try:
-            return response["choices"][0]["text"].strip()
-        except Exception as proc_e:
-            print(f"Warning: Unexpected error processing LLM response in get_next_question: {str(proc_e)}")
-            return "Sorry, I encountered an error determining the next question." # Return a fallback message
-
-    except Exception as outer_e:
-        print(f"ERROR in get_next_question function: {outer_e}")
-        # Ensure we don't mask the original error if it came from the LLM call
-        if 'llm_e' in locals() and outer_e is llm_e:
-            raise
-        else:
-            print(f"Returning fallback question due to error: {outer_e}")
-            return "Sorry, I encountered an error. Could you please repeat your last input?" # Fallback
-
 def process_message(session: Session, message: str) -> Dict:
     # Add user message to history
     session.history.append({"role": "user", "message": message})
@@ -247,18 +197,52 @@ def process_message(session: Session, message: str) -> Dict:
         if key in session.slots and value is not None:
             session.slots[key] = value
     
-    # Get the next question
-    assistant_message = get_next_question(session)
-    
-    # Add assistant message to history
-    session.history.append({"role": "assistant", "message": assistant_message})
-    
-    # Check if all slots are filled
-    all_slots_filled = all(value is not None for value in session.slots.values())
-    
+    # --- Determine next state --- 
+    all_slots_filled = all(session.slots.get(key) is not None for key in session.slots)
+
+    response_message = ""
+    next_prompted_slot = None # Track what the next question is about
+
+    if all_slots_filled:
+        response_message = "Thanks! All parameters collected. Ready to generate the plan."
+        session.last_prompted_slot = None # Clear prompted slot when ready
+    else:
+        # --- Deterministic Question Logic --- 
+        slot_order = ["roundType", "amount", "preMoney", "poolPct"]
+        for slot_key in slot_order:
+            if session.slots.get(slot_key) is None:
+                next_prompted_slot = slot_key
+                # Generate question based on the missing slot
+                if slot_key == "roundType":
+                    response_message = "What is the round type? (e.g., Series A, Seed)"
+                elif slot_key == "amount":
+                    response_message = "What is the investment amount? (e.g., $5M)"
+                elif slot_key == "preMoney":
+                    response_message = "What is the pre-money valuation? (e.g., $20M)"
+                elif slot_key == "poolPct":
+                    response_message = "What is the option pool percentage? (e.g., 10%)"
+                else:
+                    # Fallback shouldn't be reached with current slots
+                    response_message = "Sorry, I need more information."
+                    print(f"Warning: Fell through deterministic question logic for key: {slot_key}")
+                break # Found the first missing slot, stop looking
+        
+        if not next_prompted_slot:
+            # This case should ideally not happen if all_slots_filled is false,
+            # but handle it defensively.
+            print("Warning: No missing slot found despite all_slots_filled being false.")
+            response_message = "Something seems off. Could you please clarify your request?"
+            session.last_prompted_slot = None
+        else:
+             # Store the slot we are about to prompt for
+             session.last_prompted_slot = next_prompted_slot 
+
+    # Add assistant response to history
+    session.history.append({"role": "assistant", "message": response_message})
+
     return {
-        "sessionId": session.session_id,
-        "assistantMessage": assistant_message,
+        "assistantMessage": response_message,
         "slotsFilled": session.slots,
-        "ready": all_slots_filled
+        "ready": all_slots_filled,
+        "sessionId": session.session_id,
     } 

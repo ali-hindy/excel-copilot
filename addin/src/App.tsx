@@ -15,6 +15,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [planOps, setPlanOps] = useState<ActionOp[]>([]);
+  const [selectedRangeAddress, setSelectedRangeAddress] = useState<string | null>(null);
   
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService('https://bbaf-171-66-12-34.ngrok-free.app'));
@@ -33,23 +34,39 @@ export default function App() {
   };
 
   const handleGeneratePlan = async () => {
-    if (!isReady) return;
-    
+    if (!selectedRangeAddress) {
+      setIsLoading(true);
+      setErrorMessage(null);
+      try {
+        console.log("Attempting to get selected range address...");
+        const address = await sheetConnector.getSelectedRangeAddress();
+        setSelectedRangeAddress(address);
+        console.log("Selected range address confirmed:", address);
+      } catch (error: any) {
+        console.error('Error getting selected range address:', error);
+        setErrorMessage(error.message || 'Failed to get selected range address.');
+        setSelectedRangeAddress(null);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage(null);
     setPlanOps([]);
 
     try {
-      console.log("Reading sheet data...");
-      const sheetData = await sheetConnector.readSheet();
-      console.log("Sheet data read.");
+      console.log(`Reading sheet data from confirmed range: ${selectedRangeAddress}...`);
+      const sheetData = await sheetConnector.getRangeData(selectedRangeAddress);
+      console.log("Sheet data read from confirmed range.");
       
       const formattedSheetData = sheetData.map(row => 
         row.map(cell => cell === null || cell === undefined ? "" : String(cell))
       );
       
       console.log("Requesting plan generation...");
-      const planResponse = await chatService.generatePlan(formattedSheetData);
+      const planResponse = await chatService.generatePlan(slots, formattedSheetData);
       console.log("Plan generation response received:", planResponse);
 
       if (planResponse && planResponse.ops) {
@@ -109,12 +126,28 @@ export default function App() {
         {isReady && planOps.length === 0 && (
             <div style={appStyles.planTriggerContainer}>
                 <h4>Parameters Collected:</h4>
+                <p style={appStyles.instructionText}>
+                  {selectedRangeAddress 
+                    ? `Selected Range: ${selectedRangeAddress}` 
+                    : "Please select the relevant data range in your sheet."} 
+                </p>
+                {selectedRangeAddress && (
+                  <button 
+                    style={{...appStyles.button, ...appStyles.secondaryButton, marginRight: '10px'}}
+                    onClick={() => setSelectedRangeAddress(null)} 
+                    disabled={isLoading}
+                  >
+                    Change Selection
+                  </button>
+                )}
                 <button 
                   style={isLoading ? {...appStyles.button, ...appStyles.buttonDisabled} : appStyles.button}
                   onClick={handleGeneratePlan} 
                   disabled={isLoading}
                 >
-                    {isLoading ? 'Generating Plan...' : 'Generate Plan'}
+                  {isLoading 
+                    ? (selectedRangeAddress ? 'Generating Plan...' : 'Getting Selection...') 
+                    : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
                 </button>
             </div>
         )}
@@ -170,6 +203,11 @@ const appStyles: { [key: string]: React.CSSProperties } = {
       backgroundColor: '#f9f9f9',
       marginTop: '10px'
   },
+  instructionText: {
+      fontSize: '0.9em',
+      color: '#555',
+      marginBottom: '10px'
+  },
   parameterList: {
       listStyle: 'none',
       paddingLeft: '0',
@@ -183,6 +221,11 @@ const appStyles: { [key: string]: React.CSSProperties } = {
     borderRadius: '2px',
     cursor: 'pointer',
     fontSize: '1em'
+  },
+  secondaryButton: {
+    backgroundColor: '#f0f0f0',
+    color: '#333',
+    border: '1px solid #ccc',
   },
   buttonDisabled: {
     backgroundColor: '#c7e0f4', // Lighter blue

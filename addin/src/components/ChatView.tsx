@@ -37,7 +37,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
 
     try {
       const response = await chatService.sendMessage(userMessage);
-      console.log('>>> DEBUG: Received chat response:', response);
       setMessages(prev => [...prev, { role: 'assistant', message: response.assistantMessage }]);
       if (response.ready) {
         onReady(response.slotsFilled);

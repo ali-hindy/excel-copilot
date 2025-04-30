@@ -59,14 +59,14 @@ export class ChatService {
     }
   }
 
-  async generatePlan(sheetData: string[][]): Promise<any> {
+  async generatePlan(slots: any, sheetData: string[][]): Promise<any> {
     if (!this.sessionId) {
       throw new Error('No active session');
     }
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 seconds timeout
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
 
       const response = await fetch(`${this.baseUrl}/plan`, {
         method: 'POST',
@@ -74,7 +74,8 @@ export class ChatService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sheet: sheetData,
+          slots: slots,
+          sheetData: sheetData,
         }),
         signal: controller.signal, // Add AbortSignal
       });

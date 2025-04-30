@@ -1,14 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 from pathlib import Path
+import logging
+import json
 
 # Import LLM functions
 from model import generate_plan_raw_text, get_llm, parse_llm_output_to_ops
 from dialogs import get_or_create_session, process_message
 
 app = FastAPI()
+
+logger = logging.getLogger("uvicorn")
 
 # --- Load LLM on startup (optional, but recommended) ---
 @app.on_event("startup")
@@ -53,8 +57,10 @@ class ChatResponse(BaseModel):
     ready: bool
 
 class PlanRequest(BaseModel):
-    prompt: str
-    sheet: List[List[str]]
+    # prompt: str # Remove requirement for prompt
+    # sheet: List[List[str]] # Sheet data will be included
+    slots: Dict[str, Any] # Expect the collected slots
+    sheetData: List[List[str]] # Expect the sheet data from selected range
 
 class ActionOp(BaseModel):
     id: str
@@ -101,46 +107,47 @@ async def chat(request: ChatRequest):
         print(f"ERROR in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/plan", response_model=PlanResponse)
-async def create_plan(request: PlanRequest):
-    """
-    Receives the sheet data and user prompt, invokes the LLM,
-    parses the response, and returns the structured plan.
-    """
-    print(f"Received prompt: {request.prompt}")
-    print(f"Received sheet with {len(request.sheet)} rows.")
-
+@app.post("/plan")
+async def plan_endpoint(request: PlanRequest): # Use the Pydantic model for automatic validation
+    logger.info("=== Plan Endpoint Hit ===")
     try:
+        # Log the received sheet data for debugging
+        logger.info(f"Received sheet data for plan generation:")
+        logger.info(json.dumps(request.sheetData, indent=2))
+
         # --- Phase 4: Call LLM --- 
-        raw_output = await generate_plan_raw_text(request.prompt, request.sheet)
-
-        # --- Phase 5: Parse LLM Output --- 
-        try:
-            parsed_op_dicts = parse_llm_output_to_ops(raw_output)
-            # Validate with Pydantic models
-            validated_ops = [ActionOp(**op) for op in parsed_op_dicts]
-            print(f"Successfully validated {len(validated_ops)} operations against Pydantic model.")
-            return PlanResponse(ops=validated_ops, raw_llm_output=raw_output)
+        logger.info(f"Calling plan generation with slots: {request.slots}")
+        raw_output = await generate_plan_raw_text(request.slots, request.sheetData)
+        # logger.warning(f"Using sheet data directly for now. Sheet rows: {len(request.sheetData)}")
+        # raw_output = "" # Placeholder
         
-        except (ValueError, TypeError, ValidationError) as parse_error: # Catch parsing/validation errors
-            print(f"ERROR: Failed to parse or validate LLM output - {parse_error}")
-            # Return empty ops list but include raw output for debugging
-            raise HTTPException(
-                status_code=500, 
-                detail=f"Failed to parse/validate plan from LLM: {parse_error}"
-            )
-        except Exception as e:
-             print(f"ERROR: Unexpected error during parsing/validation - {e}")
-             raise HTTPException(status_code=500, detail=f"Unexpected error processing LLM response: {e}")
+        # --- Phase 5: Parse LLM Output --- 
+        parsed_op_dicts = parse_llm_output_to_ops(raw_output) # Will likely fail with empty raw_output
+        # Validate with Pydantic models
+        validated_ops = [ActionOp(**op) for op in parsed_op_dicts]
+        logger.info(f"Successfully validated {len(validated_ops)} operations against Pydantic model.")
+        return PlanResponse(ops=validated_ops, raw_llm_output=raw_output)
 
-    except FileNotFoundError as e:
-        print(f"ERROR: Model file not found - {e}")
+    except ValidationError as e: # Catch Pydantic validation errors specifically
+        logger.error(f"Validation Error for /plan request: {e.errors()}")
+        raise HTTPException(
+            status_code=422, # Use 422 for validation errors
+            detail=e.errors()
+        )
+    except FileNotFoundError as e: # Assuming generate_plan... might raise this
+        logger.error(f"ERROR: Model file not found - {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    except (ValueError, TypeError) as parse_error: # Catch parsing/validation errors from parse_llm_output_to_ops
+        logger.error(f"ERROR: Failed to parse or validate LLM output - {parse_error}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to parse/validate plan from LLM: {parse_error}"
+        )
     except Exception as e:
-        print(f"ERROR: Failed to get plan from LLM - {e}")
+        logger.error(f"ERROR: Unexpected error in /plan endpoint - {e}")
         import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to process request: {e}")
+        logger.error(traceback.format_exc()) # Log full traceback for unexpected errors
+        raise HTTPException(status_code=500, detail=f"Unexpected error processing plan request: {e}")
 
 # --- Main Execution (for development) ---
 if __name__ == "__main__":
@@ -149,5 +156,6 @@ if __name__ == "__main__":
         "main:app",
         host="127.0.0.1",
         port=8000,
-        reload=True
+        reload=True,
+        timeout_keep_alive=310 # Set keep-alive slightly longer than frontend timeout (e.g., 310 seconds)
     ) 

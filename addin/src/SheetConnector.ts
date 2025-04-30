@@ -17,7 +17,7 @@ export class SheetConnector {
    * @returns A promise that resolves with a 2D array of strings (sheet data).
    */
   async readSheet(): Promise<string[][]> {
-    console.log("Attempting to read fixed range A1:C3 for testing...");
+    // console.log("Attempting to read fixed range A1:C3 for testing..."); // Remove misleading log
     try {
       return await Excel.run(async (context) => {
         const sheet = context.workbook.worksheets.getActiveWorksheet();
@@ -61,6 +61,42 @@ export class SheetConnector {
       console.error("--- Error caught in outer catch block of readSheet --- ");
       console.error("Error Object:", error);
       throw error; // Re-throw to be caught by the caller (run function)
+    }
+  }
+
+  /**
+   * Reads the currently selected range in the active worksheet.
+   * @returns A promise that resolves with a 2D array of strings (selected range data).
+   * @throws An error if no range is selected.
+   */
+  async getSelectedRangeData(): Promise<string[][]> {
+    console.log("Attempting to read selected range...");
+    try {
+      return await Excel.run(async (context) => {
+        const range = context.workbook.getSelectedRange();
+        range.load("values"); // Load only values for now
+        await context.sync();
+        console.log("Selected range values loaded:", range.values);
+        // Convert all values to strings
+        return range.values.map(row => 
+          row.map(cell => cell === null || cell === undefined ? "" : String(cell))
+        );
+      });
+    } catch (error) {
+      console.error("--- Error reading selected range --- ", error);
+      if (error instanceof OfficeExtension.Error && error.code === "ItemNotFound") {
+          // A more specific error can be thrown if needed, 
+          // e.g., throw new Error("Please select a range in the worksheet first.");
+          // For now, rethrow the original to be handled by the caller
+          throw new Error("No range selected. Please select cells in the sheet.");
+      } else if (error instanceof Error && error.message === "No range selected. Please select cells in the sheet.") {
+          // Rethrow our specific error
+          throw error;
+      } else {
+          // Handle other potential errors
+          console.error("Unexpected error reading selected range:", error);
+          throw new Error("An unexpected error occurred while reading the selected range.");
+      }
     }
   }
 
@@ -143,5 +179,56 @@ export class SheetConnector {
       white: "#FFFFFF"
     };
     return colorMap[colorName.toLowerCase()] || null;
+  }
+
+  /**
+   * Gets the address of the currently selected range.
+   * @returns A promise that resolves with the address string (e.g., "Sheet1!A1:C10").
+   * @throws An error if no range is selected.
+   */
+  async getSelectedRangeAddress(): Promise<string> {
+    console.log("Attempting to get selected range address...");
+    try {
+      return await Excel.run(async (context) => {
+        const range = context.workbook.getSelectedRange();
+        range.load("address");
+        await context.sync();
+        console.log("Selected range address loaded:", range.address);
+        return range.address;
+      });
+    } catch (error) {
+      console.error("--- Error getting selected range address --- ", error);
+      if (error instanceof OfficeExtension.Error && error.code === "ItemNotFound") {
+          throw new Error("No range selected. Please select cells in the sheet.");
+      } else {
+          console.error("Unexpected error getting selected range address:", error);
+          throw new Error("An unexpected error occurred while getting the selected range address.");
+      }
+    }
+  }
+
+  /**
+   * Reads data from a specific range address.
+   * @param address The range address (e.g., "Sheet1!A1:C10").
+   * @returns A promise that resolves with a 2D array of strings (range data).
+   */
+  async getRangeData(address: string): Promise<string[][]> {
+    console.log(`Attempting to read data from range: ${address}`);
+    try {
+      return await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet(); // Assuming active sheet for now
+        const range = sheet.getRange(address);
+        range.load("values");
+        await context.sync();
+        console.log(`Data loaded from ${address}:`, range.values);
+        // Convert all values to strings
+        return range.values.map(row => 
+          row.map(cell => cell === null || cell === undefined ? "" : String(cell))
+        );
+      });
+    } catch (error) {
+      console.error(`--- Error reading data from range ${address} --- `, error);
+      throw new Error(`Failed to read data from range ${address}.`); // Generic error for simplicity
+    }
   }
 }
