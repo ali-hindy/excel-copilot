@@ -24,14 +24,31 @@ User instruction: "{user_prompt}"
 Based on the sheet and the instruction, generate a JSON list of operations to perform. Each operation must be an object with the following keys:
 - "id": A unique string identifier for the operation (e.g., "op-1", "op-2").
 - "range": The Excel range in A1 notation (e.g., "A1", "B2:C5").
-- "type": Either "write" or "formula".
+- "type": Either "write", "formula", or "color".
 - "values": A list of lists containing the values to write (only for type "write", use null otherwise).
 - "formula": The formula string starting with '=' (only for type "formula", use null otherwise).
+- "color": The color to apply (only for type "color", use null otherwise). Colors can be:
+  - "red", "green", "blue", "yellow", "orange", "purple", "gray", "black", "white"
+  - Or a hex color code like "#FF0000" for red
 - "note": An optional short string explaining the operation.
+
+IMPORTANT RULES:
+1. Be efficient - use ranges instead of individual cells when possible
+2. Limit operations to what's necessary to achieve the goal
+3. For writing multiple values, use a single operation with a range
+4. Maximum of 20 operations per plan
+5. Do not generate operations for cells outside the provided sheet data
+6. Ensure all operations are valid and necessary
+7. For color operations, specify the exact color requested or use standard color names
 
 Return *only* the JSON list of operations, enclosed in a single markdown ```json ... ``` block. Ensure the JSON is valid. [/INST]
 ```json
 """
+
+# --- Constants for Operation Limits ---
+MAX_OPERATIONS = 20
+MAX_TOKENS = 1024
+TEMPERATURE = 0.2
 
 # --- LLM Loading ---
 llm = None
@@ -71,18 +88,18 @@ async def generate_plan_raw_text(prompt: str, sheet_data: List[List[str]]) -> st
     full_prompt = PROMPT_TEMPLATE.format(sheet_data=sheet_json, user_prompt=prompt)
 
     print("\n--- Sending Prompt to LLM ---")
-    # print(full_prompt) # Keep prompt logging minimal for clarity
     print("Prompt sent (see model.py for template)")
     print("-----------------------------\n")
 
     response = client.create_completion(
         prompt=full_prompt,
-        max_tokens=1024,  # Increase max tokens for potentially complex plans
-        temperature=0.2,  # Lower temperature further for structured output
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
         stop=[
             "```",
             "[/INST]",
-        ],  # Stop generation at closing JSON block or potential instruction end
+            "```json",  # Add this to prevent multiple JSON blocks
+        ],
         echo=False,
     )
 
@@ -125,6 +142,12 @@ def parse_llm_output_to_ops(raw_text: str) -> List[Dict[str, Any]]:
         parsed_ops = json.loads(json_str)
         if not isinstance(parsed_ops, list):
             raise TypeError("Parsed JSON is not a list.")
+        
+        # Enforce operation limit
+        if len(parsed_ops) > MAX_OPERATIONS:
+            print(f"Warning: Truncating operations from {len(parsed_ops)} to {MAX_OPERATIONS}")
+            parsed_ops = parsed_ops[:MAX_OPERATIONS]
+            
         # Basic validation of required keys (can be expanded)
         validated_ops = []
         for i, op in enumerate(parsed_ops):
