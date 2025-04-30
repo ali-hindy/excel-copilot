@@ -3,3 +3,4 @@ uvicorn[standard]
 pydantic
 llama-cpp-python # For LLM interaction
 # llama-cpp-python # Add later in P4 
+cryptography 

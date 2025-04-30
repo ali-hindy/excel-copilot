@@ -5,10 +5,7 @@
 
 /* global console, document, Excel, Office */
 
-import { readSheet, applyOps, ActionOp } from "../SheetConnector";
-
-// Placeholder type if needed elsewhere, though run() won't use it now
-// interface ActionOp { id: string; range: string; type: string; values?: any[][]; formula?: string; note?: string; }
+import { ActionOp, SheetConnector } from "../SheetConnector";
 
 Office.onReady((info) => {
   if (info.host === Office.HostType.Excel) {
@@ -41,6 +38,32 @@ const previewPane = document.getElementById("preview-pane");
 const previewOpsList = document.getElementById("preview-ops-list");
 const applyOpsButton = document.getElementById("apply-ops");
 const errorMessageDiv = document.getElementById("error-message");
+
+// Color mapping for standard color names to hex codes
+const colorMap: { [key: string]: string } = {
+  red: "#FF0000",
+  green: "#00FF00",
+  blue: "#0000FF",
+  yellow: "#FFFF00",
+  orange: "#FFA500",
+  purple: "#800080",
+  gray: "#808080",
+  black: "#000000",
+  white: "#FFFFFF"
+};
+
+// Initialize SheetConnector
+const sheetConnector = new SheetConnector();
+
+// Update the readSheet function to use the instance method
+async function readSheet(): Promise<string[][]> {
+  return sheetConnector.readSheet();
+}
+
+// Update the applyOps function to use the instance method
+async function applyOps(ops: ActionOp[]): Promise<void> {
+  return sheetConnector.applyOps(ops);
+}
 
 async function run() {
   // --- Restoring Fetch & Render Logic ---
@@ -89,16 +112,19 @@ async function run() {
       sheet: sheetData, // Use actual sheet data
     };
     console.log(
-      `Taskpane: Preparing to fetch from https://efa332809648.ngrok.app/plan with body:`,
+      `Taskpane: Preparing to fetch from https://bbaf-171-66-12-34.ngrok-free.app/plan with body:`,
       requestBody
     );
 
     // Phase 3/4: Call Local LLM Server
-    const response = await fetch("https://efa332809648.ngrok.app/plan", {
+    const response = await fetch("https://bbaf-171-66-12-34.ngrok-free.app/plan", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Accept": "application/json",
       },
+      mode: "cors",
+      credentials: "omit",
       body: JSON.stringify(requestBody),
     });
 
@@ -136,8 +162,12 @@ async function run() {
             <div class="op-item">
                 <input type="checkbox" class="op-checkbox" id="op-${idx}" checked />
                 <label for="op-${idx}">
-                    <b>(${idx + 1})</b> <code>${op.type === "write" ? `Write ${op.range}` : `Formula ${op.range}`}</code>
-                    ${op.values ? `→ ${JSON.stringify(op.values)}` : op.formula ? `= ${op.formula}` : ""}
+                    <b>(${idx + 1})</b> <code>${op.type === "write" ? `Write ${op.range}` : 
+                      op.type === "formula" ? `Formula ${op.range}` : 
+                      `Color ${op.range}`}</code>
+                    ${op.values ? `→ ${JSON.stringify(op.values)}` : 
+                      op.formula ? `= ${op.formula}` : 
+                      op.color ? `→ ${op.color}` : ""}
                     ${op.note ? ` — <i>${op.note}</i>` : ""}
                 </label>
             </div>`

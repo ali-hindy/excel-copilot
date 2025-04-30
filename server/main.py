@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
 from typing import List, Any # Added Any
+from pathlib import Path
 
 # Import LLM functions
 from model import generate_plan_raw_text, get_llm, parse_llm_output_to_ops # Added parser
@@ -22,11 +23,22 @@ async def startup_event():
 # --- CORS Middleware (Allow all for MVP) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows all origins
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Add root endpoint for health check
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Server is running"}
+
+# Add specific OPTIONS handler for /plan endpoint
+@app.options("/plan")
+async def plan_options():
+    return {"status": "ok"}
 
 # --- Request/Response Models ---
 class PlanRequest(BaseModel):
@@ -46,6 +58,11 @@ class PlanResponse(BaseModel):
     raw_llm_output: str | None = None # Keep raw output for debugging
 
 # --- API Endpoints ---
+@app.get("/health")
+async def health_check():
+    """Simple health check endpoint for debugging CORS issues."""
+    return {"status": "ok", "message": "Server is running"}
+
 @app.post("/plan", response_model=PlanResponse)
 async def create_plan(request: PlanRequest):
     """
@@ -90,12 +107,9 @@ async def create_plan(request: PlanRequest):
 # --- Main Execution (for development) ---
 if __name__ == "__main__":
     import uvicorn
-    # Ensure model is loaded before starting server if not using startup event
-    # try:
-    #     get_llm()
-    # except Exception as e:
-    #     print(f"Failed to load LLM on startup: {e}")
-    #     # Decide if you want to exit or continue without LLM
-    #     # exit(1)
-    
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True) 
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True
+    ) 
