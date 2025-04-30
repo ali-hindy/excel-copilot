@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
 from typing import List, Any, Optional, Dict
 from pathlib import Path
 import logging
 import json
+import uuid
+from fastapi.responses import JSONResponse
 
 # Import LLM functions
 from model import generate_plan_raw_text, get_llm, parse_llm_output_to_ops
@@ -13,6 +15,9 @@ from dialogs import get_or_create_session, process_message
 app = FastAPI()
 
 logger = logging.getLogger("uvicorn")
+
+# --- Simple In-Memory Storage for Task Results (Replace with DB/Redis for production) ---
+task_results: Dict[str, Dict] = {}
 
 # --- Load LLM on startup (optional, but recommended) ---
 @app.on_event("startup")
@@ -107,26 +112,61 @@ async def chat(request: ChatRequest):
         print(f"ERROR in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Background Task Definition ---
+def run_plan_generation_task(task_id: str, slots: Dict[str, Any], sheetData: List[List[str]]):
+    """Runs the LLM plan generation and parsing in the background."""
+    logger.info(f"Background task {task_id} started.")
+    try:
+        # --- Phase 4: Call LLM --- 
+        logger.info(f"Task {task_id}: Calling plan generation with slots: {slots}")
+        # Note: generate_plan_raw_text should ideally be synchronous if llama.cpp is blocking
+        raw_output = generate_plan_raw_text(slots, sheetData) 
+        logger.info(f"Task {task_id}: LLM call completed.")
+        
+        # --- Phase 5: Parse LLM Output --- 
+        logger.info(f"Task {task_id}: Parsing LLM output.")
+        parsed_op_dicts = parse_llm_output_to_ops(raw_output)
+        # Validate with Pydantic models
+        validated_ops = [ActionOp(**op) for op in parsed_op_dicts]
+        logger.info(f"Task {task_id}: Successfully validated {len(validated_ops)} operations.")
+        
+        # Store successful result
+        task_results[task_id] = {
+            "status": "completed", 
+            "result": {"ops": [op.dict() for op in validated_ops], "raw_llm_output": raw_output}
+        }
+        logger.info(f"Background task {task_id} completed successfully.")
+
+    except Exception as e:
+        logger.error(f"Background task {task_id} failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Store error result
+        task_results[task_id] = {"status": "failed", "error": str(e)}
+
 @app.post("/plan")
-async def plan_endpoint(request: PlanRequest): # Use the Pydantic model for automatic validation
+async def plan_endpoint(request: PlanRequest, background_tasks: BackgroundTasks): # Inject BackgroundTasks
     logger.info("=== Plan Endpoint Hit ===")
     try:
         # Log the received sheet data for debugging
         logger.info(f"Received sheet data for plan generation:")
         logger.info(json.dumps(request.sheetData, indent=2))
 
-        # --- Phase 4: Call LLM --- 
-        logger.info(f"Calling plan generation with slots: {request.slots}")
-        raw_output = await generate_plan_raw_text(request.slots, request.sheetData)
-        # logger.warning(f"Using sheet data directly for now. Sheet rows: {len(request.sheetData)}")
-        # raw_output = "" # Placeholder
-        
-        # --- Phase 5: Parse LLM Output --- 
-        parsed_op_dicts = parse_llm_output_to_ops(raw_output) # Will likely fail with empty raw_output
-        # Validate with Pydantic models
-        validated_ops = [ActionOp(**op) for op in parsed_op_dicts]
-        logger.info(f"Successfully validated {len(validated_ops)} operations against Pydantic model.")
-        return PlanResponse(ops=validated_ops, raw_llm_output=raw_output)
+        # Generate a task ID
+        task_id = str(uuid.uuid4())
+        logger.info(f"Generated task ID: {task_id}")
+
+        # Initialize task status
+        task_results[task_id] = {"status": "processing"}
+
+        # Add the long-running job to background tasks
+        background_tasks.add_task(run_plan_generation_task, task_id, request.slots, request.sheetData)
+
+        # Return 202 Accepted with the task ID
+        return JSONResponse(
+            status_code=202,
+            content={"status": "processing", "task_id": task_id}
+        )
 
     except ValidationError as e: # Catch Pydantic validation errors specifically
         logger.error(f"Validation Error for /plan request: {e.errors()}")
@@ -148,6 +188,27 @@ async def plan_endpoint(request: PlanRequest): # Use the Pydantic model for auto
         import traceback
         logger.error(traceback.format_exc()) # Log full traceback for unexpected errors
         raise HTTPException(status_code=500, detail=f"Unexpected error processing plan request: {e}")
+
+# --- Result Retrieval Endpoint ---
+@app.get("/plan/result/{task_id}")
+async def get_plan_result(task_id: str):
+    logger.info(f"Polling for result of task_id: {task_id}")
+    result = task_results.get(task_id)
+    if not result:
+        logger.warning(f"Task ID {task_id} not found.")
+        raise HTTPException(status_code=404, detail="Task ID not found")
+    
+    logger.info(f"Returning status for task {task_id}: {result.get('status')}")
+    if result["status"] == "completed":
+        # Clear result after retrieval? Optional.
+        # task_results.pop(task_id, None)
+        pass # Keep result for potential re-polling or inspection
+    elif result["status"] == "failed":
+        # Clear result after retrieval? Optional.
+        # task_results.pop(task_id, None)
+        pass # Keep result for potential re-polling or inspection
+        
+    return result
 
 # --- Main Execution (for development) ---
 if __name__ == "__main__":

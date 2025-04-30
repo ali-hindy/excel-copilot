@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChatView } from './components/ChatView';
 import { PreviewPane } from './components/PreviewPane';
 import { SheetConnector, ActionOp } from './SheetConnector';
@@ -16,6 +16,8 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [planOps, setPlanOps] = useState<ActionOp[]>([]);
   const [selectedRangeAddress, setSelectedRangeAddress] = useState<string | null>(null);
+  const [planTaskId, setPlanTaskId] = useState<string | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService('https://bbaf-171-66-12-34.ngrok-free.app'));
@@ -26,12 +28,55 @@ export default function App() {
     setIsReady(true);
     setPlanOps([]);
     setErrorMessage(null);
+    setSelectedRangeAddress(null);
+    setPlanTaskId(null);
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
   };
 
   const handleChatError = (message: string) => {
     setErrorMessage(message);
     setIsLoading(false);
   };
+
+  const checkPlanStatus = async (taskId: string) => {
+    if (!taskId) return;
+    console.log(`Checking status for task: ${taskId}`);
+    try {
+      const statusResponse = await chatService.getPlanResult(taskId);
+      console.log("Poll response:", statusResponse);
+
+      if (statusResponse.status === "completed") {
+        console.log("Plan generation completed!");
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        setPlanOps(statusResponse.result.ops || []);
+        setIsLoading(false);
+        setPlanTaskId(null);
+        setSelectedRangeAddress(null);
+      } else if (statusResponse.status === "failed") {
+        console.error("Plan generation failed:", statusResponse.error);
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        setErrorMessage(`Plan generation failed: ${statusResponse.error || 'Unknown error'}`);
+        setIsLoading(false);
+        setPlanTaskId(null);
+      } else {
+        console.log("Plan still processing...");
+      }
+    } catch (error: any) {
+      console.error("Error during polling:", error);
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      setErrorMessage(`Error checking plan status: ${error.message}`);
+      setIsLoading(false);
+      setPlanTaskId(null);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
 
   const handleGeneratePlan = async () => {
     if (!selectedRangeAddress) {
@@ -66,21 +111,23 @@ export default function App() {
       );
       
       console.log("Requesting plan generation...");
-      const planResponse = await chatService.generatePlan(slots, formattedSheetData);
-      console.log("Plan generation response received:", planResponse);
-
-      if (planResponse && planResponse.ops) {
-          setPlanOps(planResponse.ops);
+      const initialResponse = await chatService.generatePlan(slots, formattedSheetData);
+      
+      if (initialResponse && initialResponse.task_id) {
+        console.log(`Plan generation started with Task ID: ${initialResponse.task_id}`);
+        setPlanTaskId(initialResponse.task_id);
+        setIsLoading(true);
+        pollingIntervalRef.current = setInterval(() => {
+          checkPlanStatus(initialResponse.task_id);
+        }, 10000);
       } else {
-          console.error("Invalid plan response structure:", planResponse);
-          throw new Error('Received invalid plan data from server.');
+        throw new Error("Failed to start plan generation task.");
       }
-
     } catch (error: any) {
       console.error('Error generating plan:', error);
       setErrorMessage(error.message || 'Failed to generate plan. Please check logs.');
-    } finally {
       setIsLoading(false);
+      setPlanTaskId(null);
     }
   };
 
@@ -146,7 +193,7 @@ export default function App() {
                   disabled={isLoading}
                 >
                   {isLoading 
-                    ? (selectedRangeAddress ? 'Generating Plan...' : 'Getting Selection...') 
+                    ? (planTaskId ? 'Generating Plan (takes ~4min)...': 'Getting Selection...') 
                     : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
                 </button>
             </div>
@@ -169,7 +216,7 @@ export default function App() {
 
         {isLoading && (
              <div style={appStyles.loadingIndicator}>
-               {planOps.length === 0 && isReady ? 'Generating plan...' : 'Processing...'}
+               {planTaskId ? 'Generating plan... (this may take up to 5 minutes)' : 'Processing...'}
              </div>
         )}
       </div>

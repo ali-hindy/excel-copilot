@@ -80,7 +80,7 @@ def get_llm():
 
 
 # --- Inference Function (P4 - Raw Text Output) ---
-async def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]]) -> str:
+def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]]) -> str:
     client = get_llm()
 
     # Simple JSON conversion for the sheet data

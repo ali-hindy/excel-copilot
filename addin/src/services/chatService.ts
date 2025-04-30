@@ -59,7 +59,7 @@ export class ChatService {
     }
   }
 
-  async generatePlan(slots: any, sheetData: string[][]): Promise<any> {
+  async generatePlan(slots: any, sheetData: string[][]): Promise<{status: string, task_id: string}> {
     if (!this.sessionId) {
       throw new Error('No active session');
     }
@@ -89,6 +89,38 @@ export class ChatService {
       return await response.json();
     } catch (error) {
       console.error('Error generating plan:', error);
+      throw error;
+    }
+  }
+
+  // New method to poll for results
+  async getPlanResult(taskId: string): Promise<any> {
+    console.log(`Polling for task result: ${taskId}`);
+    try {
+      const response = await fetch(`${this.baseUrl}/plan/result/${taskId}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+      });
+
+      if (!response.ok) {
+        // Handle 404 specifically if needed, otherwise generic error
+        if (response.status === 404) {
+          console.error(`Task ID ${taskId} not found.`);
+          throw new Error(`Task ID ${taskId} not found.`);
+        } else {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+      }
+      // Log raw text before parsing
+      const responseText = await response.text();
+      console.log(`Raw response text for task ${taskId}:`, responseText);
+      // Now parse the text
+      return JSON.parse(responseText);
+    } catch (error) {
+      console.error(`Error polling task ${taskId}:`, error);
       throw error;
     }
   }
