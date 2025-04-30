@@ -21,10 +21,10 @@ export class SheetConnector {
     try {
       return await Excel.run(async (context) => {
         const sheet = context.workbook.worksheets.getActiveWorksheet();
-        
-        // --- Restore reading the used range --- 
+
+        // --- Restore reading the used range ---
         console.log("Getting used range...");
-        const range = sheet.getUsedRange(); 
+        const range = sheet.getUsedRange();
         // const testRange = "A1:C3";
         // console.log(`Getting fixed range: ${testRange}`);
         // const range = sheet.getRange(testRange);
@@ -38,7 +38,7 @@ export class SheetConnector {
           await context.sync();
           console.log("context.sync() completed. Returning values:", range.values);
           // Convert all values to strings
-          return range.values.map(row => 
+          return range.values.map(row =>
             row.map(cell => cell === null || cell === undefined ? "" : String(cell))
           );
         } catch (loadError) {
@@ -78,14 +78,14 @@ export class SheetConnector {
         await context.sync();
         console.log("Selected range values loaded:", range.values);
         // Convert all values to strings
-        return range.values.map(row => 
+        return range.values.map(row =>
           row.map(cell => cell === null || cell === undefined ? "" : String(cell))
         );
       });
     } catch (error) {
       console.error("--- Error reading selected range --- ", error);
       if (error instanceof OfficeExtension.Error && error.code === "ItemNotFound") {
-          // A more specific error can be thrown if needed, 
+          // A more specific error can be thrown if needed,
           // e.g., throw new Error("Please select a range in the worksheet first.");
           // For now, rethrow the original to be handled by the caller
           throw new Error("No range selected. Please select cells in the sheet.");
@@ -115,7 +115,7 @@ export class SheetConnector {
         for (const op of ops) {
           console.log("Processing operation:", op);
           const targetRange = sheet.getRange(op.range);
-          
+
           if (op.type === "write" && op.values) {
             // Check if the values are color names
             const firstValue = op.values[0]?.[0];
@@ -131,6 +131,9 @@ export class SheetConnector {
               targetRange.values = op.values;
             }
           } else if (op.type === "formula" && op.formula) {
+            // Load and sync properties needed for this specific formula op
+            targetRange.load("rowCount, columnCount");
+            await context.sync();
             // If op.range is a single cell, formulas should be a 2D array
             if (targetRange.rowCount === 1 && targetRange.columnCount === 1) {
               targetRange.formulas = [[op.formula]];
@@ -222,7 +225,7 @@ export class SheetConnector {
         await context.sync();
         console.log(`Data loaded from ${address}:`, range.values);
         // Convert all values to strings
-        return range.values.map(row => 
+        return range.values.map(row =>
           row.map(cell => cell === null || cell === undefined ? "" : String(cell))
         );
       });
