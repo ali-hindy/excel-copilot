@@ -1,2 +1,3 @@
 /server/models/*
 *.DS_Store
+/server/__pycache__/*

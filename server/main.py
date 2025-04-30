@@ -1,11 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ValidationError
-from typing import List, Any # Added Any
+from typing import List, Any, Optional
 from pathlib import Path
 
 # Import LLM functions
-from model import generate_plan_raw_text, get_llm, parse_llm_output_to_ops # Added parser
+from model import generate_plan_raw_text, get_llm, parse_llm_output_to_ops
+from dialogs import get_or_create_session, process_message
 
 app = FastAPI()
 
@@ -41,6 +42,16 @@ async def plan_options():
     return {"status": "ok"}
 
 # --- Request/Response Models ---
+class ChatRequest(BaseModel):
+    sessionId: Optional[str] = None
+    message: str
+
+class ChatResponse(BaseModel):
+    sessionId: str
+    assistantMessage: str
+    slotsFilled: dict
+    ready: bool
+
 class PlanRequest(BaseModel):
     prompt: str
     sheet: List[List[str]]
@@ -62,6 +73,33 @@ class PlanResponse(BaseModel):
 async def health_check():
     """Simple health check endpoint for debugging CORS issues."""
     return {"status": "ok", "message": "Server is running"}
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """
+    Handles the chat interaction and slot filling process.
+    """
+    try:
+        print(f"\n=== Chat Endpoint ===")
+        print(f"Request sessionId: {request.sessionId}")
+        print(f"Request message: {request.message}")
+        
+        # Get or create session
+        session = get_or_create_session(request.sessionId)
+        print(f"Using session: {session.session_id}")
+        print(f"Current slots: {session.slots}")
+        
+        # Process the message and get response
+        response = process_message(session, request.message)
+        
+        print(f"Response sessionId: {response['sessionId']}")
+        print(f"Response slots: {response['slotsFilled']}")
+        print("=== End Chat Endpoint ===\n")
+        
+        return response
+    except Exception as e:
+        print(f"ERROR in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/plan", response_model=PlanResponse)
 async def create_plan(request: PlanRequest):

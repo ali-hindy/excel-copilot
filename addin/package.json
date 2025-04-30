@@ -26,7 +26,12 @@
     "watch": "webpack --mode development --watch"
   },
   "dependencies": {
+    "@babel/preset-react": "^7.26.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
     "core-js": "^3.36.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "regenerator-runtime": "^0.14.1"
   },
   "devDependencies": {

@@ -40,6 +40,16 @@ IMPORTANT RULES:
 5. Do not generate operations for cells outside the provided sheet data
 6. Ensure all operations are valid and necessary
 7. For color operations, specify the exact color requested or use standard color names
+8. Ensure proper JSON formatting:
+   - Use double quotes for strings
+   - Separate array elements with commas
+   - Close all brackets and braces
+   - No trailing commas
+9. If the user mentions any of these values, extract them:
+   - roundType: "Series A", "Seed", etc.
+   - amount: numeric value (e.g., 5000000 for $5M)
+   - preMoney: numeric value (e.g., 20000000 for $20M)
+   - poolPct: numeric value (e.g., 10 for 10%)
 
 Return *only* the JSON list of operations, enclosed in a single markdown ```json ... ``` block. Ensure the JSON is valid. [/INST]
 ```json
@@ -47,7 +57,7 @@ Return *only* the JSON list of operations, enclosed in a single markdown ```json
 
 # --- Constants for Operation Limits ---
 MAX_OPERATIONS = 20
-MAX_TOKENS = 1024
+MAX_TOKENS = 2048
 TEMPERATURE = 0.2
 
 # --- LLM Loading ---
@@ -117,7 +127,18 @@ def parse_llm_output_to_ops(raw_text: str) -> List[Dict[str, Any]]:
     """
     Extracts and parses the JSON block from the LLM's raw output.
     Handles output wrapped in ```json ... ```, ``` ... ```, or just the JSON list.
+    Attempts to fix common JSON formatting issues and handle truncation.
     """
+    def fix_json_string(json_str: str) -> str:
+        # Fix common JSON formatting issues
+        json_str = json_str.strip()
+        # Remove any trailing commas before closing brackets/braces
+        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+        # Ensure proper string quotes
+        json_str = re.sub(r"'(.*?)'", r'"\1"', json_str)
+        # Fix missing commas between array elements
+        json_str = re.sub(r'}\s*{', '},{', json_str)
+        return json_str
 
     # Try ```json ... ```
     match = re.search(r"```json\s*(\[.*?\])\s*```", raw_text, re.DOTALL)
@@ -127,62 +148,73 @@ def parse_llm_output_to_ops(raw_text: str) -> List[Dict[str, Any]]:
     if match:
         json_str = match.group(1).strip()
     else:
-        # Remove any trailing or leading backticks and whitespace
         raw_text_stripped = raw_text.strip().strip("`").strip()
-        # Try fallback: find first [ and last ] and extract substring
         start = raw_text_stripped.find("[")
         end = raw_text_stripped.rfind("]")
-        if start != -1 and end != -1 and end > start:
-            json_str = raw_text_stripped[start : end + 1]
+        if start != -1:
+            # Try to find the *actual* end of the list, possibly truncated
+            # Find the last occurrence of a closing brace '}' within the potential list
+            potential_list_content = raw_text_stripped[start:]
+            last_brace = potential_list_content.rfind('}')
+            if last_brace != -1:
+                # Assume the list ends after this last object
+                json_str = potential_list_content[:last_brace + 1] + "]" # Add the closing bracket
+            elif end != -1 and end > start: # Fallback to original end bracket logic if no braces found
+                json_str = raw_text_stripped[start : end + 1]
+            else:
+                json_str = "[]" # Default to empty list if no start bracket found
+                print("Warning: Could not find start bracket '[' in LLM output.")
         else:
             print("ERROR: Could not find JSON block or list in LLM output.")
             raise ValueError("LLM did not return a valid JSON block or list.")
 
+    # Fix common JSON formatting issues AFTER extraction
+    json_str = fix_json_string(json_str)
+
     try:
+        # Attempt to load the potentially fixed/truncated JSON
         parsed_ops = json.loads(json_str)
         if not isinstance(parsed_ops, list):
-            raise TypeError("Parsed JSON is not a list.")
+            # Handle cases where the extracted string isn't actually a list
+            # (e.g., if LLM returned a single object without brackets)
+            if isinstance(parsed_ops, dict):
+                print("Warning: LLM returned a single JSON object, wrapping in a list.")
+                parsed_ops = [parsed_ops] # Wrap it in a list
+            else:
+                raise TypeError("Parsed JSON is not a list or a dictionary.")
         
         # Enforce operation limit
         if len(parsed_ops) > MAX_OPERATIONS:
             print(f"Warning: Truncating operations from {len(parsed_ops)} to {MAX_OPERATIONS}")
             parsed_ops = parsed_ops[:MAX_OPERATIONS]
             
-        # Basic validation of required keys (can be expanded)
+        # Basic validation: Only check for existence of core keys
+        # Let Pydantic handle detailed validation later
         validated_ops = []
         for i, op in enumerate(parsed_ops):
             if not isinstance(op, dict):
                 print(f"Warning: Operation {i} is not a dictionary, skipping.")
                 continue
+            # ONLY check for absolutely required keys here
             if not all(key in op for key in ["id", "range", "type"]):
                 print(
-                    f"Warning: Operation {i} is missing required keys (id, range, type), skipping: {op}"
+                    f"Warning: Operation {i} is missing core keys (id, range, type), skipping: {op}"
                 )
                 continue
-            # Ensure required value/formula based on type
-            op_type = op.get("type")
-            if op_type == "write" and op.get("values") is None:
-                print(
-                    f"Warning: Operation {i} is type 'write' but missing 'values', skipping: {op}"
-                )
-                continue
-            if op_type == "formula" and op.get("formula") is None:
-                print(
-                    f"Warning: Operation {i} is type 'formula' but missing 'formula', skipping: {op}"
-                )
-                continue
+            # Removed checks for value/formula presence based on type here
             validated_ops.append(op)
-        print(f"Successfully parsed {len(validated_ops)} operations.")
+        
+        print(f"Successfully parsed {len(validated_ops)} potential operations.")
         return validated_ops
     except json.JSONDecodeError as e:
         print(f"ERROR: Failed to decode JSON from LLM output: {e}")
-        print("--- Faulty JSON String ---:")
+        print("--- Faulty JSON String Attempted ---:")
         print(json_str)
-        print("-------------------------")
-        raise ValueError(f"LLM output contained invalid JSON: {e}")
+        print("-----------------------------------")
+        raise ValueError(f"LLM output contained invalid JSON after fixing attempts: {e}")
     except TypeError as e:
-        print(f"ERROR: Parsed JSON logic error or result not a list: {e}")
-        raise ValueError(f"LLM did not return a valid JSON list: {e}")
+        print(f"ERROR: Parsed JSON logic error: {e}")
+        raise ValueError(f"LLM did not return a valid JSON list/object: {e}")
 
 
 # TODO P5: Add function to parse raw_output into ActionOp list

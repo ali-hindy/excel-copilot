@@ -21,10 +21,13 @@ export class SheetConnector {
     try {
       return await Excel.run(async (context) => {
         const sheet = context.workbook.worksheets.getActiveWorksheet();
-        // --- TESTING: Use a fixed range instead of getUsedRange ---
-        const testRange = "A1:C3";
-        console.log(`Getting fixed range: ${testRange}`);
-        const range = sheet.getRange(testRange);
+        
+        // --- Restore reading the used range --- 
+        console.log("Getting used range...");
+        const range = sheet.getUsedRange(); 
+        // const testRange = "A1:C3";
+        // console.log(`Getting fixed range: ${testRange}`);
+        // const range = sheet.getRange(testRange);
         // ----------------------------------------------------------
 
         // Try loading values with specific error handling
@@ -34,7 +37,10 @@ export class SheetConnector {
           console.log("Calling context.sync()...");
           await context.sync();
           console.log("context.sync() completed. Returning values:", range.values);
-          return range.values;
+          // Convert all values to strings
+          return range.values.map(row => 
+            row.map(cell => cell === null || cell === undefined ? "" : String(cell))
+          );
         } catch (loadError) {
           console.error("--- Error details during range.load/sync in readSheet --- ");
           console.error("Original Error Object:", loadError); // Log the full object

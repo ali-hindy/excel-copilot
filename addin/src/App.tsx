@@ -1,0 +1,210 @@
+import React, { useState, useEffect } from 'react';
+import { ChatView } from './components/ChatView';
+import { PreviewPane } from './components/PreviewPane';
+import { SheetConnector, ActionOp } from './SheetConnector';
+import { ChatService } from './services/chatService';
+
+export default function App() {
+  const [slots, setSlots] = useState<any>({
+    roundType: undefined,
+    amount: undefined,
+    preMoney: undefined,
+    poolPct: undefined
+  });
+  const [isReady, setIsReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [planOps, setPlanOps] = useState<ActionOp[]>([]);
+  
+  const [sheetConnector] = useState(() => new SheetConnector());
+  const [chatService] = useState(() => new ChatService('https://bbaf-171-66-12-34.ngrok-free.app'));
+
+  const handleSlotsReady = (filledSlots: any) => {
+    console.log("Slots ready:", filledSlots);
+    setSlots(filledSlots);
+    setIsReady(true);
+    setPlanOps([]);
+    setErrorMessage(null);
+  };
+
+  const handleChatError = (message: string) => {
+    setErrorMessage(message);
+    setIsLoading(false);
+  };
+
+  const handleGeneratePlan = async () => {
+    if (!isReady) return;
+    
+    setIsLoading(true);
+    setErrorMessage(null);
+    setPlanOps([]);
+
+    try {
+      console.log("Reading sheet data...");
+      const sheetData = await sheetConnector.readSheet();
+      console.log("Sheet data read.");
+      
+      const formattedSheetData = sheetData.map(row => 
+        row.map(cell => cell === null || cell === undefined ? "" : String(cell))
+      );
+      
+      console.log("Requesting plan generation...");
+      const planResponse = await chatService.generatePlan(formattedSheetData);
+      console.log("Plan generation response received:", planResponse);
+
+      if (planResponse && planResponse.ops) {
+          setPlanOps(planResponse.ops);
+      } else {
+          console.error("Invalid plan response structure:", planResponse);
+          throw new Error('Received invalid plan data from server.');
+      }
+
+    } catch (error: any) {
+      console.error('Error generating plan:', error);
+      setErrorMessage(error.message || 'Failed to generate plan. Please check logs.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApplyPlan = async (approvedOps: ActionOp[]) => {
+    if (!approvedOps || approvedOps.length === 0) {
+        setErrorMessage("No operations selected to apply.");
+        return;
+    }
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      console.log("Applying operations:", approvedOps);
+      await sheetConnector.applyOps(approvedOps);
+      console.log("Operations applied successfully.");
+      setPlanOps([]);
+      setIsReady(false);
+      setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined});
+    } catch (error: any) {
+      console.error('Error applying plan:', error);
+      setErrorMessage(error.message || 'Failed to apply plan. Check console.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    // Use ms-Fabric for some basic Office styling, add padding
+    <div className="app ms-Fabric" dir="ltr" style={appStyles.container}>
+      {/* <SlotStatusBar slots={slots} /> */}{/* Remove rendering */}
+      
+      {/* Add flex-grow to ChatView/PreviewPane containers */} 
+      <div style={appStyles.mainContent}>
+        {/* Restore conditional rendering */}
+        {!isReady && planOps.length === 0 && (
+            <ChatView 
+                chatService={chatService} 
+                onReady={handleSlotsReady} 
+                onError={handleChatError} 
+                isLoading={isLoading}
+            />
+        )}
+
+        {isReady && planOps.length === 0 && (
+            <div style={appStyles.planTriggerContainer}>
+                <h4>Parameters Collected:</h4>
+                <button 
+                  style={isLoading ? {...appStyles.button, ...appStyles.buttonDisabled} : appStyles.button}
+                  onClick={handleGeneratePlan} 
+                  disabled={isLoading}
+                >
+                    {isLoading ? 'Generating Plan...' : 'Generate Plan'}
+                </button>
+            </div>
+        )}
+        
+        {planOps.length > 0 && (
+            <PreviewPane 
+                ops={planOps} 
+                onApply={handleApplyPlan}
+                isLoading={isLoading}
+            />
+        )}
+      </div>
+
+      {/* Footer for messages */} 
+      <div style={appStyles.footer}>
+        {errorMessage && (
+            <div style={appStyles.errorMessage}>Error: {errorMessage}</div>
+        )}
+
+        {isLoading && (
+             <div style={appStyles.loadingIndicator}>
+               {planOps.length === 0 && isReady ? 'Generating plan...' : 'Processing...'}
+             </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Basic inline styles (consider moving to CSS Modules or a styled-components approach later)
+const appStyles: { [key: string]: React.CSSProperties } = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100vh',
+    padding: '15px',
+    boxSizing: 'border-box',
+    fontFamily: '"Segoe UI", system-ui, sans-serif', // Use Office Fabric font
+    // backgroundColor: 'lightblue' // DEBUG: Remove Container background
+  },
+  mainContent: {
+    flexGrow: 1,
+    display: 'flex', 
+    flexDirection: 'column',
+    overflowY: 'auto', // Allow content to scroll if needed
+    marginBottom: '10px',
+    // backgroundColor: 'lightcoral' // DEBUG: Remove Main content background
+  },
+  planTriggerContainer: {
+      padding: '15px',
+      border: '1px solid #eee',
+      borderRadius: '4px',
+      backgroundColor: '#f9f9f9',
+      marginTop: '10px'
+  },
+  parameterList: {
+      listStyle: 'none',
+      paddingLeft: '0',
+      fontSize: '0.9em'
+  },
+  button: {
+    padding: '8px 16px',
+    backgroundColor: '#0078d4', // Office blue
+    color: 'white',
+    border: 'none',
+    borderRadius: '2px',
+    cursor: 'pointer',
+    fontSize: '1em'
+  },
+  buttonDisabled: {
+    backgroundColor: '#c7e0f4', // Lighter blue
+    cursor: 'not-allowed'
+  },
+  footer: {
+      minHeight: '40px', // Ensure footer has some height even when empty
+      marginTop: 'auto', // Push footer to bottom
+      // backgroundColor: 'lightgoldenrodyellow' // DEBUG: Remove Footer background
+  },
+  errorMessage: {
+      color: '#a80000', // Office error red
+      marginTop: '10px',
+      padding: '10px',
+      border: '1px solid #fde7e9',
+      backgroundColor: '#fde7e9', // Light red background
+      borderRadius: '2px'
+  },
+  loadingIndicator: {
+      marginTop: '10px',
+      padding: '10px',
+      fontStyle: 'italic',
+      color: '#555'
+  }
+}; 
