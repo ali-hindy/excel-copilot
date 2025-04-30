@@ -13,6 +13,14 @@
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @layer components {
+        .proposed-elem {
+          @apply flex flex-row justify-center w-full px-1 py-2;
+        }
+
+      }
+    </style>
 
     <!-- Office JavaScript API -->
     <script
@@ -28,6 +36,7 @@
 
     <!-- Template styles -->
     <link href="taskpane.css" rel="stylesheet" type="text/css" />
+
   </head>
 
   <body class="ms-font-m ms-welcome ms-Fabric" style="background: #fff">
@@ -45,19 +54,20 @@
     <main id="app-body" class="main flex flex-col h-full w-full" style="display: none">
       <!-- CTA and preview pane -->
       <div class="logo-container">
-        <div class="flex flex-col items-center">
+        <div class="flex flex-col items-center mb-5">
           <h1 class="ms-font-m" style="text-align: center">Ready when you are.</h1>
         </div>
 
-        <div id="preview-pane" class="glassmorphism-container" style="display: none">
+        <div id="preview-pane" class="glassmorphism-container" style="display: none;">
           <div class="flex flex-col items-center">
             <h3 class="ms-font-l">Proposed Changes:</h3>
           </div>
-          <div class="flex flex-col items-center">
-            <ul id="preview-ops-list" class="flex" style="padding-bottom: 16px">
+
+          <div class="flex flex-col items-center w-full">
+            <div id="preview-ops-list">
               <!-- Preview items will be added here dynamically -->
-              <li class="flex">Loading...</li>
-            </ul>
+              <div class="proposed-elem">Loading...</div>
+            </div>
           </div>
           <div
             role="button"

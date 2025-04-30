@@ -89,12 +89,12 @@ async function run() {
   if (previewPane) previewPane.style.display = "block";
   if (previewOpsList)
     previewOpsList.innerHTML =
-      '<li class="ms-ListItem">Sending prompt to server... (using placeholder sheet data)</li>';
+      '<div class="proposed-elem">Sending prompt to server... (using placeholder sheet data)</div>';
 
   try {
     // PHASE 2: Read the actual sheet data
     if (previewOpsList)
-      previewOpsList.innerHTML = '<li class="ms-ListItem">Reading sheet data...</li>';
+      previewOpsList.innerHTML = '<div class="proposed-elem">Reading sheet data...</div>';
     let sheetData: string[][];
     try {
       sheetData = (await readSheet()).map((row) => row.map((cell) => String(cell)));
@@ -153,13 +153,13 @@ async function run() {
     currentOps = ops;
     if (previewOpsList) {
       if (ops.length === 0) {
-        previewOpsList.innerHTML = '<li class="ms-ListItem">No operations suggested.</li>';
+        previewOpsList.innerHTML = '<div class="proposed-elem">No operations suggested.</div>';
         if (applyOpsButton) applyOpsButton.style.display = "none";
       } else {
         previewOpsList.innerHTML = ops
           .map(
             (op, idx) => `
-            <div class="flex flex-row">
+            <div class="op-item">
                 <input type="checkbox" class="op-checkbox" id="op-${idx}" checked />
                 <label for="op-${idx}">
                     <b>(${idx + 1})</b> <code>${op.type === "write" ? `Write ${op.range}` : 
