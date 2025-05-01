@@ -258,7 +258,13 @@ export default function App() {
                 </p>
                 {selectedRangeAddress && (
                   <button 
-                    style={{...appStyles.button, ...appStyles.secondaryButton, marginRight: '10px'}}
+                    style={{marginRight: '10px'}} // Keep inline margin
+                    // Add dynamic className for loading state
+                    className={`rounded-lg px-4 py-2 cursor-pointer ${ // Added padding
+                      isLoading
+                        ? "bg-gray-700 text-gray-400 cursor-not-allowed" // Loading style
+                        : "bg-gray-200 text-black hover:bg-gray-300" // Secondary button style (non-loading)
+                    }`}
                     onClick={() => setSelectedRangeAddress(null)} 
                     disabled={isLoading}
                   >
@@ -266,7 +272,14 @@ export default function App() {
                   </button>
                 )}
                 <button 
+                  // RESTORE original inline style logic
                   style={isLoading ? {...appStyles.button, ...appStyles.buttonDisabled} : appStyles.button}
+                  // Keep className for basic structure (padding, rounded corners)
+                  className={`rounded-lg px-4 py-2 cursor-pointer ${ // Use non-conditional part of class if needed, or remove if style handles everything
+                    isLoading
+                      ? "cursor-not-allowed" // Only add cursor style if needed
+                      : "hover:bg-gray-800" // Add hover effect if style doesn't provide one
+                  }`}
                   onClick={handleGeneratePlan} 
                   disabled={isLoading}
                 >
