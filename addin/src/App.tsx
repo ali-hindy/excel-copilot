@@ -34,7 +34,6 @@ export default function App() {
   const [capturedFormatting, setCapturedFormatting] = useState<RangeFormatting | null>(null);
   // NEW State for combined final data
   const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
-  
 
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService("https://efa332809648.ngrok.app"));
@@ -57,12 +56,12 @@ export default function App() {
 
   const checkPlanStatus = async (taskId: string, formatting: RangeFormatting | null) => {
     if (!taskId || !formatting) {
-        console.error("Polling started without formatting info, stopping.");
-        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        setErrorMessage("Internal error: Formatting info lost during polling setup.")
-        setIsLoading(false);
-        setPlanTaskId(null);
-        return;
+      console.error("Polling started without formatting info, stopping.");
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      setErrorMessage("Internal error: Formatting info lost during polling setup.");
+      setIsLoading(false);
+      setPlanTaskId(null);
+      return;
     }
     console.log(`Checking status for task: ${taskId}`);
     try {
@@ -75,13 +74,12 @@ export default function App() {
 
         setFinalPlanData({
           backendResult: statusResponse.result,
-          formatting: formatting
+          formatting: formatting,
         });
         setPlanOps(statusResponse.result.ops || []);
-        
+
         setIsLoading(false);
         setPlanTaskId(null);
-
       } else if (statusResponse.status === "failed") {
         console.error("Plan generation failed:", statusResponse.error);
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
@@ -135,7 +133,7 @@ export default function App() {
       return; // Return if we only fetched the address this time
     }
 
-    // --- If address is confirmed, proceed to generate plan --- 
+    // --- If address is confirmed, proceed to generate plan ---
     setIsLoading(true);
     setErrorMessage(null);
     // setPlanOps([]); // Clear previous ops
@@ -146,16 +144,21 @@ export default function App() {
       console.log(`Reading sheet data from confirmed range: ${currentAddress}...`);
       const sheetData = await sheetConnector.getRangeData(currentAddress);
       console.log("Sheet data read from confirmed range.");
-      
+
       // No need to format here, backend expects raw data
-      // const formattedSheetData = sheetData.map(row => 
+      // const formattedSheetData = sheetData.map(row =>
       //   row.map(cell => cell === null || cell === undefined ? "" : String(cell))
       // );
-      
+
       console.log("Requesting plan generation and capturing formatting...");
       // Call generatePlan WITH the sheetConnector instance
-      const initialResponse = await chatService.generatePlan(slots, sheetData, currentAddress, sheetConnector);
-      
+      const initialResponse = await chatService.generatePlan(
+        slots,
+        sheetData,
+        currentAddress,
+        sheetConnector
+      );
+
       // Store formatting and start polling
       if (initialResponse && initialResponse.task_id && initialResponse.rangeFormatting) {
         console.log(`Plan generation started with Task ID: ${initialResponse.task_id}`);
@@ -174,8 +177,8 @@ export default function App() {
         throw new Error("Failed to start plan generation task or capture formatting.");
       }
     } catch (error: any) {
-      console.error('Error during plan generation setup:', error); // Clarified log
-      setErrorMessage(error.message || 'Failed to generate plan. Please check logs.');
+      console.error("Error during plan generation setup:", error); // Clarified log
+      setErrorMessage(error.message || "Failed to generate plan. Please check logs.");
       setIsLoading(false);
       setPlanTaskId(null);
       setCapturedFormatting(null); // Clear formatting on error too
@@ -186,9 +189,8 @@ export default function App() {
     // We might not need approvedOps if we apply the whole result directly
     // Keep it for now in case PreviewPane filtering is still desired, but we'll use finalPlanData
     if (!finalPlanData) {
-        setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
-        return;
-
+      setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
+      return;
     }
     // Maybe check approvedOps length if filtering is implemented in PreviewPane?
     // if (!approvedOps || approvedOps.length === 0) {
@@ -201,27 +203,33 @@ export default function App() {
     try {
       // console.log("Applying operations:", approvedOps); // Log the whole plan data instead?
       console.log("Applying formatted plan with:", finalPlanData);
-      
+
       // Call the NEW function with the combined data
-      await sheetConnector.applyFormattedPlan(finalPlanData.backendResult, finalPlanData.formatting);
-      
+      await sheetConnector.applyFormattedPlan(
+        finalPlanData.backendResult,
+        finalPlanData.formatting
+      );
+
       console.log("Formatted plan applied successfully.");
-      
+
       // Clear state after successful application
       setPlanOps([]); // Clear ops used by PreviewPane
       setFinalPlanData(null);
       setCapturedFormatting(null); // Though already null if finalPlanData was set
       setIsReady(false); // Go back to chat view? Or show a success message?
       setSelectedRangeAddress(null); // Clear selected address
-      setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined}); // Reset slots
-      
+      setSlots({
+        roundType: undefined,
+        amount: undefined,
+        preMoney: undefined,
+        poolPct: undefined,
+      }); // Reset slots
     } catch (error: any) {
-      console.error('Error applying formatted plan:', error);
-      setErrorMessage(error.message || 'Failed to apply formatted plan. Check console.');
+      console.error("Error applying formatted plan:", error);
+      setErrorMessage(error.message || "Failed to apply formatted plan. Check console.");
       // Consider leaving finalPlanData intact on error for potential retry?
       // setFinalPlanData(null);
       // setCapturedFormatting(null);
-
     } finally {
       setIsLoading(false);
     }
@@ -229,42 +237,42 @@ export default function App() {
 
   return (
     // Use ms-Fabric for some basic Office styling, add padding
-    <div className="app ms-Fabric" dir="ltr" style={appStyles.container}>
-      {/* <SlotStatusBar slots={slots} /> */}{/* Remove rendering */}
-      
-      {/* Add flex-grow to ChatView/PreviewPane containers */} 
-      <div style={appStyles.mainContent}>
-        {/* Show ChatView if not ready AND no final plan data exists */} 
+    <div className="app" dir="ltr" style={appStyles.container}>
+      {/* <SlotStatusBar slots={slots} /> */}
+      {/* Remove rendering */}
+
+      {/* Add flex-grow to ChatView/PreviewPane containers */}
+      <div
+        id="react-container"
+        className="flex flex-col justify-center"
+        style={appStyles.mainContent}
+      >
+        {/* Restore conditional rendering */}
         {!isReady && !finalPlanData && (
-            <ChatView 
-                chatService={chatService} 
-                onReady={handleSlotsReady} 
-                onError={handleChatError} 
-                isLoading={isLoading}
-            />
+          <ChatView
+            chatService={chatService}
+            onReady={handleSlotsReady}
+            onError={handleChatError}
+            isLoading={isLoading}
+          />
         )}
 
-        {/* Show Plan Trigger if ready AND no final plan data exists */} 
         {isReady && !finalPlanData && (
-            <div style={appStyles.planTriggerContainer}>
-                <h4>Parameters Collected:</h4>
-                <p style={appStyles.instructionText}>
-                  {selectedRangeAddress 
-                    ? `Selected Range: ${selectedRangeAddress}` 
-                    : "Please select the relevant data range in your sheet."} 
-                </p>
-                {selectedRangeAddress && (
-                  <button 
-                    style={{...appStyles.button, ...appStyles.secondaryButton, marginRight: '10px'}}
-                    onClick={() => setSelectedRangeAddress(null)} 
-                    disabled={isLoading}
-                  >
-                    Change Selection
-                  </button>
-                )}
-                <button 
-                  style={isLoading ? {...appStyles.button, ...appStyles.buttonDisabled} : appStyles.button}
-                  onClick={handleGeneratePlan} 
+          <div className="p-3  border border-black/50 rounded-lg  bg-white/20 backdrop-blur-md shadow-xl">
+            <h4 className="text-lg font-semibold mb-2 text-black">Parameters</h4>
+            <p className="text-md text-black  mb-4">
+              {selectedRangeAddress
+                ? `Selected Range: ${selectedRangeAddress}`
+                : "Please select the relevant data range in your sheet."}
+            </p>
+            <div
+              id="react-buttons"
+              className="flex flex-col items-center font-bold w-full gap-2 *:w-[80%] *:flex *:justify-center *:py-2"
+            >
+              {selectedRangeAddress && (
+                <button
+                  className="bg-black text-white border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setSelectedRangeAddress(null)}
                   disabled={isLoading}
                 >
                   Change Selection
@@ -290,15 +298,14 @@ export default function App() {
             </div>
           </div>
         )}
-        
-        {/* Show PreviewPane if final plan data IS available */} 
-        {finalPlanData && (
-            <PreviewPane 
-                ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
-                onApply={handleApplyPlan}
-                isLoading={isLoading}
-            />
 
+        {/* Show PreviewPane if final plan data IS available */}
+        {finalPlanData && (
+          <PreviewPane
+            ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
+            onApply={handleApplyPlan}
+            isLoading={isLoading}
+          />
         )}
       </div>
 
