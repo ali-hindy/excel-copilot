@@ -1,3 +1,5 @@
+import { SheetConnector, RangeFormatting } from "../SheetConnector";
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   message: string;
@@ -25,7 +27,7 @@ export class ChatService {
   async sendMessage(message: string): Promise<ChatResponse> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 seconds timeout
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
 
       const response = await fetch(`${this.baseUrl}/chat`, {
         method: 'POST',
@@ -59,12 +61,27 @@ export class ChatService {
     }
   }
 
-  async generatePlan(slots: any, sheetData: string[][]): Promise<{status: string, task_id: string}> {
+  async generatePlan(
+      slots: any,
+      sheetData: string[][],
+      selectedRangeAddress: string | null,
+      sheetConnector: SheetConnector
+   ): Promise<{ status: string; task_id: string; rangeFormatting: RangeFormatting }> {
     if (!this.sessionId) {
       throw new Error('No active session');
     }
+    if (!selectedRangeAddress) {
+      throw new Error('Cannot generate plan without a selected range address.');
+    }
 
     try {
+      // --- Get Formatting BEFORE starting backend task ---
+      console.log("ChatService: Getting selected range formatting...");
+      const rangeFormatting = await sheetConnector.getSelectedRangeFormatting();
+      console.log("ChatService: Formatting captured:", rangeFormatting);
+      // --------------------------------------------------
+
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
 
@@ -76,6 +93,7 @@ export class ChatService {
         body: JSON.stringify({
           slots: slots,
           sheetData: sheetData,
+          selectedRangeAddress: selectedRangeAddress
         }),
         signal: controller.signal, // Add AbortSignal
       });
@@ -86,7 +104,15 @@ export class ChatService {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      return await response.json();
+      const backendResponse = await response.json();
+
+      // --- Return task ID AND formatting ---
+      return {
+          ...backendResponse, // Should contain { status, task_id }
+          rangeFormatting: rangeFormatting
+      };
+      // -------------------------------------
+
     } catch (error) {
       console.error('Error generating plan:', error);
       throw error;
