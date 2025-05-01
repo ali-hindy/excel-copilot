@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 MODEL_DIR = Path(__file__).parent / "models"
 # Make sure you download the model and place it here
 MODEL_PATH = MODEL_DIR / "codellama-7b-instruct.Q4_K_M.gguf"
-N_GPU_LAYERS = 1  # Metal support - adjust if using CUDA or CPU
+N_GPU_LAYERS = -1  # Offload as many layers as possible to Metal GPU
 N_CTX = 2048  # Context window size
 
 # --- Prompt Template (Initial Version for P4/P5) ---
