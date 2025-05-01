@@ -20,7 +20,7 @@ export class ChatService {
   private sessionId: string | null = null;
   private baseUrl: string;
 
-  constructor(baseUrl: string = 'https://efa332809648.ngrok.app') {
+  constructor(baseUrl: string = 'https://bbaf-171-66-12-34.ngrok-free.app') {
     this.baseUrl = baseUrl;
   }
 

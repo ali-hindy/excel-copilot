@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChatView } from "./components/ChatView";
 import { PreviewPane } from "./components/PreviewPane";
-import { SheetConnector, ActionOp } from "./SheetConnector";
+import { SheetConnector, ActionOp, RangeFormatting } from "./SheetConnector";
 import { ChatService } from "./services/chatService";
 
-// Interface for backend result structure (adjust if needed based on actual backend response)
+// Interface for backend result structure - UPDATED
 interface BackendPlanResult {
   ops: ActionOp[];
   raw_llm_output?: string;
+  slots: any; // Add type if known
+  calculated_values: any; // Add type if known
+  column_mapping: any; // Add type if known
 }
 
 // Interface for the final combined data needed for applying the formatted plan
@@ -36,7 +39,7 @@ export default function App() {
   const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
 
   const [sheetConnector] = useState(() => new SheetConnector());
-  const [chatService] = useState(() => new ChatService("https://efa332809648.ngrok.app"));
+  const [chatService] = useState(() => new ChatService("https://bbaf-171-66-12-34.ngrok-free.app"));
 
   const handleSlotsReady = (filledSlots: any) => {
     console.log("Slots ready:", filledSlots);
@@ -258,45 +261,45 @@ export default function App() {
         )}
 
         {isReady && !finalPlanData && (
-          <div className="p-3  border border-black/50 rounded-lg  bg-white/20 backdrop-blur-md shadow-xl">
-            <h4 className="text-lg font-semibold mb-2 text-black">Parameters</h4>
-            <p className="text-md text-black  mb-4">
-              {selectedRangeAddress
-                ? `Selected Range: ${selectedRangeAddress}`
-                : "Please select the relevant data range in your sheet."}
-            </p>
-            <div
-              id="react-buttons"
-              className="flex flex-col items-center font-bold w-full gap-2 *:w-[80%] *:flex *:justify-center *:py-2"
-            >
-              {selectedRangeAddress && (
-                <button
-                  className="bg-black text-white border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={() => setSelectedRangeAddress(null)}
+            <div style={appStyles.planTriggerContainer}>
+                <h4>Parameters Collected:</h4>
+                <p style={appStyles.instructionText}>
+                  {selectedRangeAddress 
+                    ? `Selected Range: ${selectedRangeAddress}` 
+                    : "Please select the relevant data range in your sheet."} 
+                </p>
+                {selectedRangeAddress && (
+                  <button 
+                    style={{marginRight: '10px'}} // Keep inline margin
+                    // Add dynamic className for loading state
+                    className={`rounded-lg px-4 py-2 cursor-pointer ${ // Added padding
+                      isLoading
+                        ? "bg-gray-700 text-gray-400 cursor-not-allowed" // Loading style
+                        : "bg-gray-200 text-black hover:bg-gray-300" // Secondary button style (non-loading)
+                    }`}
+                    onClick={() => setSelectedRangeAddress(null)} 
+                    disabled={isLoading}
+                  >
+                    Change Selection
+                  </button>
+                )}
+                <button 
+                  // RESTORE original inline style logic
+                  style={isLoading ? {...appStyles.button, ...appStyles.buttonDisabled} : appStyles.button}
+                  // Keep className for basic structure (padding, rounded corners)
+                  className={`rounded-lg px-4 py-2 cursor-pointer ${ // Use non-conditional part of class if needed, or remove if style handles everything
+                    isLoading
+                      ? "cursor-not-allowed" // Only add cursor style if needed
+                      : "hover:bg-gray-800" // Add hover effect if style doesn't provide one
+                  }`}
+                  onClick={handleGeneratePlan} 
                   disabled={isLoading}
                 >
-                  Change Selection
+                  {isLoading 
+                    ? (planTaskId ? 'Generating Plan (takes ~4min)...': 'Getting Selection...') 
+                    : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
                 </button>
-              )}
-              <button
-                className={`rounded-lg cursor-pointer ${
-                  isLoading
-                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                    : "bg-black text-white hover:bg-gray-800"
-                }`}
-                onClick={handleGeneratePlan}
-                disabled={isLoading}
-              >
-                {isLoading
-                  ? planTaskId
-                    ? "Generating Plan (takes ~4min)..."
-                    : "Getting Selection..."
-                  : selectedRangeAddress
-                    ? "Confirm and Generate Plan"
-                    : "Get selected range"}
-              </button>
             </div>
-          </div>
         )}
 
         {/* Show PreviewPane if final plan data IS available */}
