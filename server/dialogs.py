@@ -204,7 +204,7 @@ def process_message(session: Session, message: str) -> Dict:
     next_prompted_slot = None # Track what the next question is about
 
     if all_slots_filled:
-        response_message = "Thanks! All parameters collected. Ready to generate the plan."
+        response_message = "Thanks! Your cap table has been generated!"
         session.last_prompted_slot = None # Clear prompted slot when ready
     else:
         # --- Deterministic Question Logic --- 

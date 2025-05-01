@@ -1,61 +1,66 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChatService, ChatMessage } from "../services/chatService";
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  message: string;
+}
+
 interface ChatViewProps {
-  chatService: ChatService;
-  onReady: (slots: any) => void;
+  messages: ChatMessage[];
+  onSendMessage: (message: string) => void;
+  isThinking: boolean;
+  streamingMessage: string;
   onError: (message: string) => void;
   isLoading: boolean;
 }
 
-export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onError, isLoading }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
+export function ChatView({ 
+  messages, 
+  onSendMessage, 
+  isThinking, 
+  streamingMessage,
+  onError,
+  isLoading 
+}: ChatViewProps) {
+  const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // useEffect(() => {
-  //   setMessages([
-  //     {
-  //       role: "assistant",
-  //       message: 'Hello! How can I help you model your cap table today? (e.g., \"Model Series A\")',
-  //     },
-  //   ]);
-  // }, []);
-
   useEffect(() => {
-    if (messages.length > 1) {
-      scrollToBottom();
+    scrollToBottom();
+  }, [messages, isThinking, streamingMessage]);
+
+  const handleSend = () => {
+    if (inputValue.trim() && !isLoading && !isThinking) {
+      onSendMessage(inputValue);
+      setInputValue('');
     }
-  }, [messages]);
+  };
 
-  const handleSend = async () => {
-    if (!input.trim() || isSending) return;
-    const userMessage = input.trim();
-    setInput("");
-    setMessages((prev) => [...prev, { role: "user", message: userMessage }]);
-    setIsSending(true);
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(event.target.value);
+  };
 
-    try {
-      const response = await chatService.sendMessage(userMessage);
-      setMessages((prev) => [...prev, { role: "assistant", message: response.assistantMessage }]);
-      if (response.ready) {
-        onReady(response.slotsFilled);
-      }
-    } catch (error: any) {
-      console.error("Error in ChatView sending message:", error);
-      onError(error.message || "Failed to send message.");
-    } finally {
-      setIsSending(false);
+  const handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      handleSend();
     }
   };
 
   return (
     <div className="flex flex-col flex-grow overflow-hidden font-sans text-base text-[#0D0D0D] h-full">
+      {/* Inject keyframes needed for thinking animation */}
+      <style>{`
+        @keyframes pulseOpacity {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+
       <div className="flex flex-col flex-grow overflow-y-auto p-2.5 mb-2.5">
         {messages.map((msg, index) => (
           <div
@@ -67,9 +72,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
             {msg.message}
           </div>
         ))}
-        {messages.length === 0 && (
-          <div className="text-center font-bold text-2xl text-gray-700 my-auto flex-grow flex items-center justify-center">
-            How can I help?!
+        {streamingMessage && (
+          <div className="my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words mr-auto">
+            {streamingMessage}
+          </div>
+        )}
+        {isThinking && (
+          <div className="my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words mr-auto loading-indicator-pulse" style={styles.thinkingMessage}>
+            Thinking...
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -80,18 +90,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
           <input
             className="flex-grow py-3 pr-[45px] pl-[15px] border-none focus:outline-none"
             type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && handleSend()}
-            placeholder={isSending ? "Waiting for response..." : "Give a finstruction!"}
-            disabled={isSending}
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyPress={handleKeyPress}
+            placeholder="Type your message..."
+            disabled={isLoading || isThinking}
           />
           <button
             className={`absolute right-2.5 top-1/2 transform -translate-y-1/2 p-0 w-8 h-8 bg-black text-white border-none rounded-full cursor-pointer text-xl flex items-center justify-center transition-colors duration-200 ease-in-out ${
-              !input.trim() || isSending ? "bg-gray-300 cursor-not-allowed text-gray-500" : "hover:bg-gray-700"
+              !inputValue.trim() || isLoading || isThinking ? "bg-gray-300 cursor-not-allowed text-gray-500" : "hover:bg-gray-700"
             }`}
             onClick={handleSend}
-            disabled={!input.trim() || isSending}
+            disabled={!inputValue.trim() || isLoading || isThinking}
           >
             ↑
           </button>
@@ -99,4 +109,87 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
       </div>
     </div>
   );
+}
+
+// --- Styles (Restore this definition) --- 
+const styles: { [key: string]: React.CSSProperties } = {
+  chatViewContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    // Use Tailwind classes now for background/border/rounding/font?
+    // backgroundColor: '#f7f7f7',
+    // border: '1px solid #ccc',
+    // borderRadius: '4px',
+    overflow: 'hidden'
+  },
+  messagesContainer: {
+    flexGrow: 1,
+    padding: '10px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px' // Add gap between messages
+  },
+  userMessage: {
+    // Example: Use Tailwind if preferred: className="... bg-gray-100 ml-auto ..."
+    alignSelf: 'flex-end',
+    backgroundColor: '#dcf8c6', // Light green
+    padding: '8px 12px',
+    borderRadius: '10px 10px 0 10px',
+    maxWidth: '80%',
+    wordWrap: 'break-word'
+  },
+  assistantMessage: {
+    // Example: Use Tailwind if preferred: className="... bg-white mr-auto ..."
+    alignSelf: 'flex-start',
+    backgroundColor: '#ffffff', // White
+    padding: '8px 12px',
+    borderRadius: '10px 10px 10px 0',
+    maxWidth: '80%',
+    wordWrap: 'break-word',
+    border: '1px solid #eee'
+  },
+  thinkingMessage: { // Style for the thinking indicator
+    fontStyle: 'italic',
+    color: '#777',
+    // Add pulsing animation directly here
+    animationName: 'pulseOpacity',
+    animationDuration: '1.5s',
+    animationTimingFunction: 'ease-in-out',
+    animationIterationCount: 'infinite'
+  },
+  inputContainer: {
+    display: 'flex',
+    padding: '10px',
+    borderTop: '1px solid #ccc',
+    backgroundColor: '#fff'
+  },
+  input: {
+    flexGrow: 1,
+    padding: '10px',
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    marginRight: '10px',
+    fontSize: '1em'
+  },
+  button: {
+    padding: '10px 15px',
+    backgroundColor: '#0078d4', // Office blue
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '1em'
+  },
+  buttonDisabled: {
+    backgroundColor: '#c7e0f4',
+    cursor: 'not-allowed'
+  },
+  // Error style might not be needed if handled in App.tsx
+  // error: {
+  //   color: 'red',
+  //   padding: '5px 10px',
+  //   textAlign: 'center'
+  // }
 };

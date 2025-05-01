@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ChatView } from "./components/ChatView";
+import { ChatView, ChatMessage } from "./components/ChatView";
 import { PreviewPane } from "./components/PreviewPane";
 import { SheetConnector, ActionOp, RangeFormatting } from "./SheetConnector";
-import { ChatService } from "./services/chatService";
+import { ChatService, ChatResponse } from "./services/chatService";
 
 // Interface for backend result structure - UPDATED
 interface BackendPlanResult {
@@ -29,14 +29,20 @@ export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', message: 'Hello! How can I help you model your cap table today? (e.g., \"Model Series A\")' }
+  ]);
   const [planOps, setPlanOps] = useState<ActionOp[]>([]);
   const [selectedRangeAddress, setSelectedRangeAddress] = useState<string | null>(null);
   const [planTaskId, setPlanTaskId] = useState<string | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  // NEW State for captured formatting
   const [capturedFormatting, setCapturedFormatting] = useState<RangeFormatting | null>(null);
-  // NEW State for combined final data
   const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
+
+  const [isAssistantThinking, setIsAssistantThinking] = useState(false);
+  const [pendingAssistantMessage, setPendingAssistantMessage] = useState<string | null>(null);
+  const [displayedAssistantMessage, setDisplayedAssistantMessage] = useState<string>("");
+  const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService("https://bbaf-171-66-12-34.ngrok-free.app"));
@@ -238,6 +244,82 @@ export default function App() {
     }
   };
 
+  const handleSendMessage = async (userMessage: string) => {
+    if (!userMessage.trim()) return;
+
+    // Add user message to history immediately
+    setMessages(prev => [...prev, { role: 'user', message: userMessage }]);
+    setErrorMessage(null);
+    setIsLoading(true); // General loading state
+    setIsAssistantThinking(true); // Specific state for chat response
+    setPendingAssistantMessage(null); // Clear any pending message
+    setDisplayedAssistantMessage(""); // Clear displayed message
+
+    try {
+      const response: ChatResponse = await chatService.sendMessage(userMessage);
+      
+      setIsAssistantThinking(false); // Assistant is no longer thinking
+      setIsLoading(false); // Turn off general loading
+
+      if (response.assistantMessage) {
+         // Instead of adding directly, set it as pending for streaming
+         setPendingAssistantMessage(response.assistantMessage);
+      }
+
+      if (response.slotsFilled) {
+        setSlots(response.slotsFilled);
+      }
+
+      if (response.ready) {
+        handleSlotsReady(response.slotsFilled);
+      }
+
+    } catch (error: any) {
+      console.error("Error sending/receiving chat message:", error);
+      setErrorMessage(error.message || "Failed to get response from assistant.");
+      setIsAssistantThinking(false);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (streamingIntervalRef.current) {
+      clearInterval(streamingIntervalRef.current);
+      streamingIntervalRef.current = null;
+    }
+
+    if (pendingAssistantMessage) {
+      setDisplayedAssistantMessage(""); // Start fresh
+      let index = 0;
+      const message = pendingAssistantMessage; // Capture current pending message
+
+      streamingIntervalRef.current = setInterval(() => {
+        if (index < message.length) {
+          // Append character by character (adjust speed with interval delay)
+          setDisplayedAssistantMessage(prev => message.substring(0, index + 1));
+          index++;
+        } else {
+          // Finished streaming
+          if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
+          streamingIntervalRef.current = null;
+          // Add the completed message to the main history
+          setMessages(prev => [...prev, { role: 'assistant', message }]);
+          setPendingAssistantMessage(null); // Clear pending message
+          setDisplayedAssistantMessage(""); // Clear displayed message
+        }
+      }, 50); // Adjust delay (milliseconds) for streaming speed (50ms = 20 chars/sec)
+
+    }
+
+    // Cleanup function to clear interval if component unmounts or pending message changes
+    return () => {
+      if (streamingIntervalRef.current) {
+        clearInterval(streamingIntervalRef.current);
+        streamingIntervalRef.current = null;
+      }
+    };
+  }, [pendingAssistantMessage]); // Re-run effect when pendingAssistantMessage changes
+
   return (
     // Use ms-Fabric for some basic Office styling, add padding
     <div className="app" dir="ltr" style={appStyles.container}>
@@ -253,8 +335,10 @@ export default function App() {
         {/* Restore conditional rendering */}
         {!isReady && !finalPlanData && (
           <ChatView
-            chatService={chatService}
-            onReady={handleSlotsReady}
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            isThinking={isAssistantThinking}
+            streamingMessage={displayedAssistantMessage}
             onError={handleChatError}
             isLoading={isLoading}
           />
@@ -296,7 +380,7 @@ export default function App() {
                   disabled={isLoading}
                 >
                   {isLoading 
-                    ? (planTaskId ? 'Generating Plan (takes ~4min)...': 'Getting Selection...') 
+                    ? (planTaskId ? 'Generating Plan (takes ~1min)...': 'Getting Selection...') 
                     : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
                 </button>
             </div>
@@ -316,9 +400,9 @@ export default function App() {
       <div style={appStyles.footer}>
         {errorMessage && <div style={appStyles.errorMessage}>Error: {errorMessage}</div>}
 
-        {isLoading && (
-          <div style={appStyles.loadingIndicator}>
-            {planTaskId ? "Generating plan... (this may take up to 5 minutes)" : "Processing..."}
+        {isLoading && !isAssistantThinking && (
+          <div style={appStyles.loadingIndicator} className="loading-indicator-pulse">
+            {planTaskId ? 'Generating plan... (this may take up to 1 minute)' : 'Processing...'}
           </div>
         )}
       </div>
