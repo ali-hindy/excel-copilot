@@ -13,6 +13,9 @@ import re
 from model import generate_plan_raw_text, get_llm, parse_column_mapping
 from dialogs import get_or_create_session, process_message
 
+# Add import for custom operations functions
+from model import generate_custom_plan_raw_text, parse_custom_llm_output_to_ops
+
 app = FastAPI()
 
 logger = logging.getLogger("uvicorn")
@@ -89,6 +92,27 @@ class ActionOp(BaseModel):
 class PlanResponse(BaseModel):
     ops: List[ActionOp]
     raw_llm_output: str | None = None  # Keep raw output for debugging
+
+
+# --- New Request/Response Models for Custom Operations ---
+class CustomPlanRequest(BaseModel):
+    prompt: str
+    sheetData: List[List[str]]
+
+
+class CustomOperation(BaseModel):
+    id: str
+    range: str
+    type: str  # "write" | "formula" | "color"
+    values: List[List[Any]] | None = None
+    formula: str | None = None
+    color: str | None = None
+    note: str | None = None
+
+
+class CustomPlanResponse(BaseModel):
+    ops: List[CustomOperation]
+    raw_llm_output: str | None = None
 
 
 # --- API Endpoints ---
@@ -899,6 +923,52 @@ async def get_plan_result(task_id: str):
         pass  # Keep result for potential re-polling or inspection
 
     return result
+
+
+# --- New Endpoints for Custom Operations ---
+@app.post("/custom-plan", response_model=CustomPlanResponse)
+def custom_plan_endpoint(request: CustomPlanRequest):
+    """
+    Generate a plan with custom operations based on user prompts.
+    This is a synchronous version that directly returns the result.
+    """
+    try:
+        logger.info("=== Custom Plan Endpoint Hit ===")
+        logger.info(f"Prompt: {request.prompt}")
+        logger.info(f"Received sheet data length: {len(request.sheetData)}")
+
+        # Generate raw text using imported function from model.py
+        raw_output = generate_custom_plan_raw_text(request.prompt, request.sheetData)
+        logger.info("Raw LLM output generated successfully")
+
+        # Parse the LLM output using imported function from model.py
+        operations = parse_custom_llm_output_to_ops(raw_output)
+        logger.info(f"Parsed {len(operations)} operations")
+
+        # Convert to Pydantic models
+        validated_ops = [CustomOperation(**op) for op in operations]
+        logger.info(f"Validated {len(validated_ops)} operations")
+
+        # Return the response
+        return CustomPlanResponse(
+            ops=validated_ops,
+            raw_llm_output=raw_output  # Include raw output for debugging
+        )
+
+    except ValidationError as e:
+        logger.error(f"Validation Error for /custom-plan request: {e.errors()}")
+        raise HTTPException(status_code=422, detail=e.errors())
+    except FileNotFoundError as e:
+        logger.error(f"ERROR: Model file not found - {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        logger.error(f"ERROR: Value error - {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"ERROR: Unexpected error in /custom-plan endpoint - {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 
 # --- Main Execution (for development) ---
