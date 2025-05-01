@@ -20,7 +20,7 @@ export class ChatService {
   private sessionId: string | null = null;
   private baseUrl: string;
 
-  constructor(baseUrl: string = 'https://bbaf-171-66-12-34.ngrok-free.app') {
+  constructor(baseUrl: string = 'https://efa332809648.ngrok.app') {
     this.baseUrl = baseUrl;
   }
 
@@ -48,7 +48,7 @@ export class ChatService {
       }
 
       const data = await response.json();
-      
+
       // Store sessionId if this is the first message
       if (!this.sessionId && data.sessionId) {
         this.sessionId = data.sessionId;
@@ -150,4 +150,4 @@ export class ChatService {
       throw error;
     }
   }
-} 
+}

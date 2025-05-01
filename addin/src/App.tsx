@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ChatView } from './components/ChatView';
-import { PreviewPane } from './components/PreviewPane';
-import { SheetConnector, ActionOp, RangeFormatting } from './SheetConnector';
-import { ChatService } from './services/chatService';
+import React, { useState, useEffect, useRef } from "react";
+import { ChatView } from "./components/ChatView";
+import { PreviewPane } from "./components/PreviewPane";
+import { SheetConnector, ActionOp } from "./SheetConnector";
+import { ChatService } from "./services/chatService";
 
 // Interface for backend result structure (adjust if needed based on actual backend response)
 interface BackendPlanResult {
@@ -21,7 +21,7 @@ export default function App() {
     roundType: undefined,
     amount: undefined,
     preMoney: undefined,
-    poolPct: undefined
+    poolPct: undefined,
   });
   const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -35,8 +35,9 @@ export default function App() {
   // NEW State for combined final data
   const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
   
+
   const [sheetConnector] = useState(() => new SheetConnector());
-  const [chatService] = useState(() => new ChatService('https://bbaf-171-66-12-34.ngrok-free.app'));
+  const [chatService] = useState(() => new ChatService("https://efa332809648.ngrok.app"));
 
   const handleSlotsReady = (filledSlots: any) => {
     console.log("Slots ready:", filledSlots);
@@ -84,7 +85,7 @@ export default function App() {
       } else if (statusResponse.status === "failed") {
         console.error("Plan generation failed:", statusResponse.error);
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        setErrorMessage(`Plan generation failed: ${statusResponse.error || 'Unknown error'}`);
+        setErrorMessage(`Plan generation failed: ${statusResponse.error || "Unknown error"}`);
         setIsLoading(false);
         setPlanTaskId(null);
         setCapturedFormatting(null);
@@ -125,8 +126,8 @@ export default function App() {
         // Update local variable for use below if address was just fetched
         currentAddress = address;
       } catch (error: any) {
-        console.error('Error getting selected range address:', error);
-        setErrorMessage(error.message || 'Failed to get selected range address.');
+        console.error("Error getting selected range address:", error);
+        setErrorMessage(error.message || "Failed to get selected range address.");
         setSelectedRangeAddress(null);
       } finally {
         setIsLoading(false);
@@ -187,6 +188,7 @@ export default function App() {
     if (!finalPlanData) {
         setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
         return;
+
     }
     // Maybe check approvedOps length if filtering is implemented in PreviewPane?
     // if (!approvedOps || approvedOps.length === 0) {
@@ -219,6 +221,7 @@ export default function App() {
       // Consider leaving finalPlanData intact on error for potential retry?
       // setFinalPlanData(null);
       // setCapturedFormatting(null);
+
     } finally {
       setIsLoading(false);
     }
@@ -264,11 +267,28 @@ export default function App() {
                   onClick={handleGeneratePlan} 
                   disabled={isLoading}
                 >
-                  {isLoading 
-                    ? (planTaskId ? 'Generating Plan (takes ~4min)...': 'Getting Selection...') 
-                    : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
+                  Change Selection
                 </button>
+              )}
+              <button
+                className={`rounded-lg cursor-pointer ${
+                  isLoading
+                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                    : "bg-black text-white hover:bg-gray-800"
+                }`}
+                onClick={handleGeneratePlan}
+                disabled={isLoading}
+              >
+                {isLoading
+                  ? planTaskId
+                    ? "Generating Plan (takes ~4min)..."
+                    : "Getting Selection..."
+                  : selectedRangeAddress
+                    ? "Confirm and Generate Plan"
+                    : "Get selected range"}
+              </button>
             </div>
+          </div>
         )}
         
         {/* Show PreviewPane if final plan data IS available */} 
@@ -278,19 +298,18 @@ export default function App() {
                 onApply={handleApplyPlan}
                 isLoading={isLoading}
             />
+
         )}
       </div>
 
-      {/* Footer for messages */} 
+      {/* Footer for messages */}
       <div style={appStyles.footer}>
-        {errorMessage && (
-            <div style={appStyles.errorMessage}>Error: {errorMessage}</div>
-        )}
+        {errorMessage && <div style={appStyles.errorMessage}>Error: {errorMessage}</div>}
 
         {isLoading && (
-             <div style={appStyles.loadingIndicator}>
-               {planTaskId ? 'Generating plan... (this may take up to 5 minutes)' : 'Processing...'}
-             </div>
+          <div style={appStyles.loadingIndicator}>
+            {planTaskId ? "Generating plan... (this may take up to 5 minutes)" : "Processing..."}
+          </div>
         )}
       </div>
     </div>
@@ -300,74 +319,74 @@ export default function App() {
 // Basic inline styles (consider moving to CSS Modules or a styled-components approach later)
 const appStyles: { [key: string]: React.CSSProperties } = {
   container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100vh',
-    padding: '15px',
-    boxSizing: 'border-box',
+    display: "flex",
+    flexDirection: "column",
+    height: "100vh",
+    padding: "15px",
+    boxSizing: "border-box",
     fontFamily: '"Segoe UI", system-ui, sans-serif', // Use Office Fabric font
     // backgroundColor: 'lightblue' // DEBUG: Remove Container background
   },
   mainContent: {
     flexGrow: 1,
-    display: 'flex', 
-    flexDirection: 'column',
-    overflowY: 'auto', // Allow content to scroll if needed
-    marginBottom: '10px',
+    display: "flex",
+    flexDirection: "column",
+    overflowY: "auto", // Allow content to scroll if needed
+    marginBottom: "10px",
     // backgroundColor: 'lightcoral' // DEBUG: Remove Main content background
   },
   planTriggerContainer: {
-      padding: '15px',
-      border: '1px solid #eee',
-      borderRadius: '4px',
-      backgroundColor: '#f9f9f9',
-      marginTop: '10px'
+    padding: "15px",
+    border: "1px solid #eee",
+    borderRadius: "4px",
+    backgroundColor: "#f9f9f9",
+    marginTop: "10px",
   },
   instructionText: {
-      fontSize: '0.9em',
-      color: '#555',
-      marginBottom: '10px'
+    fontSize: "0.9em",
+    color: "#555",
+    marginBottom: "10px",
   },
   parameterList: {
-      listStyle: 'none',
-      paddingLeft: '0',
-      fontSize: '0.9em'
+    listStyle: "none",
+    paddingLeft: "0",
+    fontSize: "0.9em",
   },
   button: {
-    padding: '8px 16px',
-    backgroundColor: '#0078d4', // Office blue
-    color: 'white',
-    border: 'none',
-    borderRadius: '2px',
-    cursor: 'pointer',
-    fontSize: '1em'
+    padding: "8px 16px",
+    backgroundColor: "#000", // Office blue
+    color: "white",
+    border: "none",
+    borderRadius: "2px",
+    cursor: "pointer",
+    fontSize: "1em",
   },
   secondaryButton: {
-    backgroundColor: '#f0f0f0',
-    color: '#333',
-    border: '1px solid #ccc',
+    backgroundColor: "#f0f0f0",
+    color: "#000",
+    border: "1px solid #ccc",
   },
   buttonDisabled: {
-    backgroundColor: '#c7e0f4', // Lighter blue
-    cursor: 'not-allowed'
+    backgroundColor: "#c7e0f4", // Lighter blue
+    cursor: "not-allowed",
   },
   footer: {
-      minHeight: '40px', // Ensure footer has some height even when empty
-      marginTop: 'auto', // Push footer to bottom
-      // backgroundColor: 'lightgoldenrodyellow' // DEBUG: Remove Footer background
+    minHeight: "40px", // Ensure footer has some height even when empty
+    marginTop: "auto", // Push footer to bottom
+    // backgroundColor: 'lightgoldenrodyellow' // DEBUG: Remove Footer background
   },
   errorMessage: {
-      color: '#a80000', // Office error red
-      marginTop: '10px',
-      padding: '10px',
-      border: '1px solid #fde7e9',
-      backgroundColor: '#fde7e9', // Light red background
-      borderRadius: '2px'
+    color: "#a80000", // Office error red
+    marginTop: "10px",
+    padding: "10px",
+    border: "1px solid #fde7e9",
+    backgroundColor: "#fde7e9", // Light red background
+    borderRadius: "2px",
   },
   loadingIndicator: {
-      marginTop: '10px',
-      padding: '10px',
-      fontStyle: 'italic',
-      color: '#555'
-  }
-}; 
+    marginTop: "10px",
+    padding: "10px",
+    fontStyle: "italic",
+    color: "#555",
+  },
+};
