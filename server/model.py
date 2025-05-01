@@ -3,6 +3,10 @@ import re  # For finding JSON block
 from pathlib import Path
 from llama_cpp import Llama
 from typing import List, Dict, Any  # Added Dict, Any
+import logging # Import logging
+
+# Get a logger for this module
+logger = logging.getLogger(__name__) 
 
 # --- Configuration ---
 MODEL_DIR = Path(__file__).parent / "models"
@@ -14,42 +18,36 @@ N_CTX = 2048  # Context window size
 # --- Prompt Template (Initial Version for P4/P5) ---
 # This will be refined in Phase 5
 PROMPT_TEMPLATE = """
-[INST] You are an Excel assistant. Generate a plan to model a cap table based on the provided parameters and sheet data.
+[INST] You are an Excel assistant analyzing sheet data.
 
-Parameters:
-```json
-{slots}
-```
+Input Range Address: {selectedRangeAddress}
 
 Sheet Data:
 ```json
 {sheet_data}
 ```
 
-Task: Generate a JSON list of operations to model the funding round described by the parameters, using the provided sheet data as context or a starting point. Each operation must be an object with the following keys:
-- "id": A unique string identifier for the operation (e.g., "op-1", "op-2").
-- "range": The Excel range in A1 notation (e.g., "A1", "B2:C5").
-- "type": Either "write", "formula", or "color".
-- "values": A list of lists containing the values to write (only for type "write", use null otherwise).
-- "formula": The formula string starting with '=' (only for type "formula", use null otherwise).
-- "color": The color name (e.g., "blue", "green") or hex code (e.g., "#4F81BD") to apply (only for type "color", use null otherwise).
-- "note": An optional short string explaining the operation.
+Task: Analyze the Sheet Data headers (if any) and content to identify the columns containing essential pre-round cap table information. Determine the 0-based column index for:
+- "shareholder_name_col_idx"
+- "pre_round_shares_col_idx"
+- "pre_round_investment_col_idx" (use null if not clearly identifiable)
+
+Provide the output as a single, valid JSON object containing ONLY the "column_mapping" key with the identified indices.
 
 IMPORTANT RULES:
-1. Analyze the Parameters ({slots}) to understand the round details (roundType, amount, preMoney, poolPct).
-2. Use the Sheet Data ({sheet_data}) as the existing context. Your operations should modify or add to this data.
-3. Generate operations to set up headers, input parameters, calculate post-money valuation, share prices, and the final cap table structure based on the parameters.
-4. Be efficient - use ranges instead of individual cells when possible.
-5. Limit operations to what's necessary to achieve the goal.
-6. Maximum of 20 operations per plan.
-7. Ensure all operations are valid and necessary.
-8. Ensure proper JSON formatting:
-   - Use double quotes for all keys and string values.
-   - Use null for optional fields that are not applicable.
-   - No trailing commas.
+1. Carefully analyze the Sheet Data headers and structure to determine the correct column indices.
+2. If a column isn't present or clearly identifiable, use null for its index.
+3. Return ONLY the valid JSON object below. Do not include explanations, notes, or markdown formatting like ```json.
 
-Return *only* the JSON list of operations, enclosed in a single markdown ```json ... ``` block. Ensure the JSON is valid. [/INST]
-```json
+Example Output Format:
+{{
+  "column_mapping": {{
+    "shareholder_name_col_idx": 0,
+    "pre_round_shares_col_idx": 2,
+    "pre_round_investment_col_idx": 1
+  }}
+}}
+[/INST]
 """
 
 # --- Constants for Operation Limits ---
@@ -80,7 +78,7 @@ def get_llm():
 
 
 # --- Inference Function (P4 - Raw Text Output) ---
-def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]]) -> str:
+def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]], selectedRangeAddress: str) -> str:
     client = get_llm()
 
     # Simple JSON conversion for the sheet data
@@ -94,11 +92,17 @@ def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]]) -
 
     slots_json = json.dumps(slots)
 
-    full_prompt = PROMPT_TEMPLATE.format(sheet_data=sheet_json, slots=slots_json)
+    # Pass address to the prompt format
+    full_prompt = PROMPT_TEMPLATE.format(
+        sheet_data=sheet_json, 
+        slots=slots_json, 
+        selectedRangeAddress=selectedRangeAddress # Address is for context, not direct use by LLM now
+    )
 
-    print("\n--- Sending Prompt to LLM ---")
-    print("Prompt template: (see model.py)")
-    print("-----------------------------\n")
+    # DEBUG: Log the full prompt using INFO level for visibility
+    # print(f"Full prompt being sent to LLM:\n{full_prompt}")
+
+    print("\n--- Sending Calculation Prompt to LLM ---") # Updated log message
 
     response = client.create_completion(
         prompt=full_prompt,
@@ -107,113 +111,102 @@ def generate_plan_raw_text(slots: Dict[str, Any], sheet_data: List[List[str]]) -
         stop=[
             "```",
             "[/INST]",
-            "```json",  # Add this to prevent multiple JSON blocks
         ],
         echo=False,
     )
 
     raw_output = response["choices"][0]["text"].strip()
-    # Add the closing ``` if llama.cpp stopped before emitting it
-    if not raw_output.endswith("```"):
-        raw_output += "\n```"
+    
+    # Keep the existing logic that tries to ensure it ends with '}' just in case
+    if not raw_output.endswith("}"):
+        # Find the last brace and trim, or add if completely missing
+        last_brace_pos = raw_output.rfind('}')
+        if last_brace_pos != -1:
+             # If the structure is like { "key": { ... } <- stopped here
+             # We need to add the final brace.
+             # Let's check if the content *looks* like it needs closing.
+             # A simple check: count open vs close braces
+             if raw_output.count('{') > raw_output.count('}'):
+                 raw_output += "}"
+             else:
+                 # It has balanced braces, but maybe ends early? Trim to last brace.
+                 # This might still be imperfect.
+                 raw_output = raw_output[:last_brace_pos+1]
 
-    print(f"\n--- LLM Raw Output ---\n{raw_output}\n----------------------\n")
+        elif raw_output.startswith("{"):
+             # Starts with { but has no } at all, add one.
+             raw_output += "}"
+        else:
+            # Doesn't look like JSON object, default to empty
+            raw_output = "{}"
+
+
+    print(f"\n--- LLM Raw Calculation Output ---\n{raw_output}\n----------------------\n") # Updated log message
     return raw_output
 
 
-# --- Phase 5: JSON Parsing ---
-def parse_llm_output_to_ops(raw_text: str) -> List[Dict[str, Any]]:
+# --- Phase 5: JSON Parsing (Update to parse only column mapping) ---
+# Rename function
+def parse_column_mapping(raw_text: str) -> Dict[str, Any]:
     """
-    Extracts and parses the JSON block from the LLM's raw output.
-    Handles output wrapped in ```json ... ```, ``` ... ```, or just the JSON list.
-    Attempts to fix common JSON formatting issues and handle truncation.
+    Parses the JSON object containing column mapping from the LLM.
+    Attempts to fix common JSON formatting issues and find the JSON block.
     """
     def fix_json_string(json_str: str) -> str:
-        # Fix common JSON formatting issues
+        # Basic JSON string cleaning
         json_str = json_str.strip()
+        # Ensure proper string quotes (basic)
+        json_str = re.sub(r"'(.*?)'", r'""', json_str)
         # Remove any trailing commas before closing brackets/braces
         json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
-        # Ensure proper string quotes
-        json_str = re.sub(r"'(.*?)'", r'"\1"', json_str)
-        # Fix missing commas between array elements
-        json_str = re.sub(r'}\s*{', '},{', json_str)
         return json_str
 
-    # Try ```json ... ```
-    match = re.search(r"```json\s*(\[.*?\])\s*```", raw_text, re.DOTALL)
-    if not match:
-        # Try generic triple-backtick: ``` ... ```
-        match = re.search(r"```\s*(\[.*?\])\s*```", raw_text, re.DOTALL)
-    if match:
-        json_str = match.group(1).strip()
-    else:
-        raw_text_stripped = raw_text.strip().strip("`").strip()
-        start = raw_text_stripped.find("[")
-        end = raw_text_stripped.rfind("]")
-        if start != -1:
-            # Try to find the *actual* end of the list, possibly truncated
-            # Find the last occurrence of a closing brace '}' within the potential list
-            potential_list_content = raw_text_stripped[start:]
-            last_brace = potential_list_content.rfind('}')
-            if last_brace != -1:
-                # Assume the list ends after this last object
-                json_str = potential_list_content[:last_brace + 1] + "]" # Add the closing bracket
-            elif end != -1 and end > start: # Fallback to original end bracket logic if no braces found
-                json_str = raw_text_stripped[start : end + 1]
-            else:
-                json_str = "[]" # Default to empty list if no start bracket found
-                print("Warning: Could not find start bracket '[' in LLM output.")
-        else:
-            print("ERROR: Could not find JSON block or list in LLM output.")
-            raise ValueError("LLM did not return a valid JSON block or list.")
+    # --- Find the JSON block --- 
+    start_index = raw_text.find('{')
+    end_index = raw_text.rfind('}')
+
+    if start_index == -1 or end_index == -1 or end_index < start_index:
+        logger.error(f"Could not find JSON block starting with {{ and ending with }} in LLM output: {raw_text}")
+        raise ValueError("Could not find JSON object block in LLM output.")
+        
+    # Extract the potential JSON string
+    json_str = raw_text[start_index : end_index + 1]
+    logger.info(f"Extracted potential JSON block: {json_str}")
+    # -------------------------
 
     # Fix common JSON formatting issues AFTER extraction
     json_str = fix_json_string(json_str)
 
     try:
-        # Attempt to load the potentially fixed/truncated JSON
-        parsed_ops = json.loads(json_str)
-        if not isinstance(parsed_ops, list):
-            # Handle cases where the extracted string isn't actually a list
-            # (e.g., if LLM returned a single object without brackets)
-            if isinstance(parsed_ops, dict):
-                print("Warning: LLM returned a single JSON object, wrapping in a list.")
-                parsed_ops = [parsed_ops] # Wrap it in a list
-            else:
-                raise TypeError("Parsed JSON is not a list or a dictionary.")
-        
-        # Enforce operation limit
-        if len(parsed_ops) > MAX_OPERATIONS:
-            print(f"Warning: Truncating operations from {len(parsed_ops)} to {MAX_OPERATIONS}")
-            parsed_ops = parsed_ops[:MAX_OPERATIONS]
+        # Attempt to load the potentially fixed JSON object
+        parsed_data = json.loads(json_str)
+        if not isinstance(parsed_data, dict):
+            raise TypeError("Parsed JSON is not a dictionary.")
+
+        # Validate structure
+        if "column_mapping" not in parsed_data or not isinstance(parsed_data["column_mapping"], dict):
+            logger.error(f"LLM did not return expected 'column_mapping' dictionary: {parsed_data}")
+            raise ValueError("LLM output missing or invalid 'column_mapping' key/structure.")
             
-        # Basic validation: Only check for existence of core keys
-        # Let Pydantic handle detailed validation later
-        validated_ops = []
-        for i, op in enumerate(parsed_ops):
-            if not isinstance(op, dict):
-                print(f"Warning: Operation {i} is not a dictionary, skipping.")
-                continue
-            # ONLY check for absolutely required keys here
-            if not all(key in op for key in ["id", "range", "type"]):
-                print(
-                    f"Warning: Operation {i} is missing core keys (id, range, type), skipping: {op}"
-                )
-                continue
-            # Removed checks for value/formula presence based on type here
-            validated_ops.append(op)
+        mapping = parsed_data["column_mapping"]
+        map_keys = ["shareholder_name_col_idx", "pre_round_shares_col_idx", "pre_round_investment_col_idx"]
+        # Check if *all* expected keys are present (optional, depending on strictness)
+        # if not all(key in mapping for key in map_keys):
+        #      logger.warning(f"LLM output missing some expected column_mapping keys: {mapping}")
+             # Allow partial results for now
+
+        print(f"Successfully parsed LLM column mapping: {mapping}")
+        return mapping # Return only the inner mapping dict
         
-        print(f"Successfully parsed {len(validated_ops)} potential operations.")
-        return validated_ops
     except json.JSONDecodeError as e:
-        print(f"ERROR: Failed to decode JSON from LLM output: {e}")
+        print(f"ERROR: Failed to decode JSON column mapping from extracted block: {e}")
         print("--- Faulty JSON String Attempted ---:")
         print(json_str)
         print("-----------------------------------")
-        raise ValueError(f"LLM output contained invalid JSON after fixing attempts: {e}")
+        raise ValueError(f"LLM output block contained invalid JSON after fixing attempts: {e}")
     except TypeError as e:
         print(f"ERROR: Parsed JSON logic error: {e}")
-        raise ValueError(f"LLM did not return a valid JSON list/object: {e}")
+        raise ValueError(f"LLM did not return a valid JSON dictionary for column mapping: {e}")
 
 
 # TODO P5: Add function to parse raw_output into ActionOp list

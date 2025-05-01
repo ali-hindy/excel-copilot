@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatView } from './components/ChatView';
 import { PreviewPane } from './components/PreviewPane';
-import { SheetConnector, ActionOp } from './SheetConnector';
+import { SheetConnector, ActionOp, RangeFormatting } from './SheetConnector';
 import { ChatService } from './services/chatService';
+
+// Interface for backend result structure (adjust if needed based on actual backend response)
+interface BackendPlanResult {
+  ops: ActionOp[];
+  raw_llm_output?: string;
+}
+
+// Interface for the final combined data needed for applying the formatted plan
+interface FinalPlanData {
+  backendResult: BackendPlanResult;
+  formatting: RangeFormatting;
+}
 
 export default function App() {
   const [slots, setSlots] = useState<any>({
@@ -18,6 +30,10 @@ export default function App() {
   const [selectedRangeAddress, setSelectedRangeAddress] = useState<string | null>(null);
   const [planTaskId, setPlanTaskId] = useState<string | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // NEW State for captured formatting
+  const [capturedFormatting, setCapturedFormatting] = useState<RangeFormatting | null>(null);
+  // NEW State for combined final data
+  const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
   
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService('https://bbaf-171-66-12-34.ngrok-free.app'));
@@ -38,8 +54,15 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const checkPlanStatus = async (taskId: string) => {
-    if (!taskId) return;
+  const checkPlanStatus = async (taskId: string, formatting: RangeFormatting | null) => {
+    if (!taskId || !formatting) {
+        console.error("Polling started without formatting info, stopping.");
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        setErrorMessage("Internal error: Formatting info lost during polling setup.")
+        setIsLoading(false);
+        setPlanTaskId(null);
+        return;
+    }
     console.log(`Checking status for task: ${taskId}`);
     try {
       const statusResponse = await chatService.getPlanResult(taskId);
@@ -48,16 +71,24 @@ export default function App() {
       if (statusResponse.status === "completed") {
         console.log("Plan generation completed!");
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+
+        setFinalPlanData({
+          backendResult: statusResponse.result,
+          formatting: formatting
+        });
         setPlanOps(statusResponse.result.ops || []);
+        
         setIsLoading(false);
         setPlanTaskId(null);
-        setSelectedRangeAddress(null);
+
       } else if (statusResponse.status === "failed") {
         console.error("Plan generation failed:", statusResponse.error);
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         setErrorMessage(`Plan generation failed: ${statusResponse.error || 'Unknown error'}`);
         setIsLoading(false);
         setPlanTaskId(null);
+        setCapturedFormatting(null);
+        setFinalPlanData(null);
       } else {
         console.log("Plan still processing...");
       }
@@ -67,6 +98,8 @@ export default function App() {
       setErrorMessage(`Error checking plan status: ${error.message}`);
       setIsLoading(false);
       setPlanTaskId(null);
+      setCapturedFormatting(null);
+      setFinalPlanData(null);
     }
   };
 
@@ -79,7 +112,9 @@ export default function App() {
   }, []);
 
   const handleGeneratePlan = async () => {
-    if (!selectedRangeAddress) {
+    // --- First step: Get/Confirm selected range address ---
+    let currentAddress = selectedRangeAddress;
+    if (!currentAddress) {
       setIsLoading(true);
       setErrorMessage(null);
       try {
@@ -87,6 +122,8 @@ export default function App() {
         const address = await sheetConnector.getSelectedRangeAddress();
         setSelectedRangeAddress(address);
         console.log("Selected range address confirmed:", address);
+        // Update local variable for use below if address was just fetched
+        currentAddress = address;
       } catch (error: any) {
         console.error('Error getting selected range address:', error);
         setErrorMessage(error.message || 'Failed to get selected range address.');
@@ -94,60 +131,94 @@ export default function App() {
       } finally {
         setIsLoading(false);
       }
-      return;
+      return; // Return if we only fetched the address this time
     }
 
+    // --- If address is confirmed, proceed to generate plan --- 
     setIsLoading(true);
     setErrorMessage(null);
-    setPlanOps([]);
+    // setPlanOps([]); // Clear previous ops
+    setFinalPlanData(null); // Clear previous final data
+    setCapturedFormatting(null); // Clear previous formatting
 
     try {
-      console.log(`Reading sheet data from confirmed range: ${selectedRangeAddress}...`);
-      const sheetData = await sheetConnector.getRangeData(selectedRangeAddress);
+      console.log(`Reading sheet data from confirmed range: ${currentAddress}...`);
+      const sheetData = await sheetConnector.getRangeData(currentAddress);
       console.log("Sheet data read from confirmed range.");
       
-      const formattedSheetData = sheetData.map(row => 
-        row.map(cell => cell === null || cell === undefined ? "" : String(cell))
-      );
+      // No need to format here, backend expects raw data
+      // const formattedSheetData = sheetData.map(row => 
+      //   row.map(cell => cell === null || cell === undefined ? "" : String(cell))
+      // );
       
-      console.log("Requesting plan generation...");
-      const initialResponse = await chatService.generatePlan(slots, formattedSheetData);
+      console.log("Requesting plan generation and capturing formatting...");
+      // Call generatePlan WITH the sheetConnector instance
+      const initialResponse = await chatService.generatePlan(slots, sheetData, currentAddress, sheetConnector);
       
-      if (initialResponse && initialResponse.task_id) {
+      // Store formatting and start polling
+      if (initialResponse && initialResponse.task_id && initialResponse.rangeFormatting) {
         console.log(`Plan generation started with Task ID: ${initialResponse.task_id}`);
+        // Store the captured formatting in state
+        setCapturedFormatting(initialResponse.rangeFormatting);
         setPlanTaskId(initialResponse.task_id);
         setIsLoading(true);
+        // Clear previous interval if any
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        // Start new polling interval
         pollingIntervalRef.current = setInterval(() => {
-          checkPlanStatus(initialResponse.task_id);
-        }, 10000);
+          // Pass the task ID AND the captured formatting to checkPlanStatus
+          checkPlanStatus(initialResponse.task_id, initialResponse.rangeFormatting);
+        }, 10000); // Poll every 10 seconds
       } else {
-        throw new Error("Failed to start plan generation task.");
+        throw new Error("Failed to start plan generation task or capture formatting.");
       }
     } catch (error: any) {
-      console.error('Error generating plan:', error);
+      console.error('Error during plan generation setup:', error); // Clarified log
       setErrorMessage(error.message || 'Failed to generate plan. Please check logs.');
       setIsLoading(false);
       setPlanTaskId(null);
+      setCapturedFormatting(null); // Clear formatting on error too
     }
   };
 
   const handleApplyPlan = async (approvedOps: ActionOp[]) => {
-    if (!approvedOps || approvedOps.length === 0) {
-        setErrorMessage("No operations selected to apply.");
+    // We might not need approvedOps if we apply the whole result directly
+    // Keep it for now in case PreviewPane filtering is still desired, but we'll use finalPlanData
+    if (!finalPlanData) {
+        setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
         return;
     }
+    // Maybe check approvedOps length if filtering is implemented in PreviewPane?
+    // if (!approvedOps || approvedOps.length === 0) {
+    //     setErrorMessage("No operations selected to apply.");
+    //     return;
+    // }
+
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      console.log("Applying operations:", approvedOps);
-      await sheetConnector.applyOps(approvedOps);
-      console.log("Operations applied successfully.");
-      setPlanOps([]);
-      setIsReady(false);
-      setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined});
+      // console.log("Applying operations:", approvedOps); // Log the whole plan data instead?
+      console.log("Applying formatted plan with:", finalPlanData);
+      
+      // Call the NEW function with the combined data
+      await sheetConnector.applyFormattedPlan(finalPlanData.backendResult, finalPlanData.formatting);
+      
+      console.log("Formatted plan applied successfully.");
+      
+      // Clear state after successful application
+      setPlanOps([]); // Clear ops used by PreviewPane
+      setFinalPlanData(null);
+      setCapturedFormatting(null); // Though already null if finalPlanData was set
+      setIsReady(false); // Go back to chat view? Or show a success message?
+      setSelectedRangeAddress(null); // Clear selected address
+      setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined}); // Reset slots
+      
     } catch (error: any) {
-      console.error('Error applying plan:', error);
-      setErrorMessage(error.message || 'Failed to apply plan. Check console.');
+      console.error('Error applying formatted plan:', error);
+      setErrorMessage(error.message || 'Failed to apply formatted plan. Check console.');
+      // Consider leaving finalPlanData intact on error for potential retry?
+      // setFinalPlanData(null);
+      // setCapturedFormatting(null);
     } finally {
       setIsLoading(false);
     }
@@ -160,8 +231,8 @@ export default function App() {
       
       {/* Add flex-grow to ChatView/PreviewPane containers */} 
       <div style={appStyles.mainContent}>
-        {/* Restore conditional rendering */}
-        {!isReady && planOps.length === 0 && (
+        {/* Show ChatView if not ready AND no final plan data exists */} 
+        {!isReady && !finalPlanData && (
             <ChatView 
                 chatService={chatService} 
                 onReady={handleSlotsReady} 
@@ -170,7 +241,8 @@ export default function App() {
             />
         )}
 
-        {isReady && planOps.length === 0 && (
+        {/* Show Plan Trigger if ready AND no final plan data exists */} 
+        {isReady && !finalPlanData && (
             <div style={appStyles.planTriggerContainer}>
                 <h4>Parameters Collected:</h4>
                 <p style={appStyles.instructionText}>
@@ -199,9 +271,10 @@ export default function App() {
             </div>
         )}
         
-        {planOps.length > 0 && (
+        {/* Show PreviewPane if final plan data IS available */} 
+        {finalPlanData && (
             <PreviewPane 
-                ops={planOps} 
+                ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
                 onApply={handleApplyPlan}
                 isLoading={isLoading}
             />
