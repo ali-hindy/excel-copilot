@@ -39,10 +39,19 @@ export default function App() {
   const [capturedFormatting, setCapturedFormatting] = useState<RangeFormatting | null>(null);
   const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
 
+  // State for fake progress bar
+  const [planProgress, setPlanProgress] = useState<number>(0);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const [isAssistantThinking, setIsAssistantThinking] = useState(false);
   const [pendingAssistantMessage, setPendingAssistantMessage] = useState<string | null>(null);
   const [displayedAssistantMessage, setDisplayedAssistantMessage] = useState<string>("");
   const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [isApplyingPlan, setIsApplyingPlan] = useState(false);
+
+  // State for success message
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService("https://bbaf-171-66-12-34.ngrok-free.app"));
@@ -50,17 +59,33 @@ export default function App() {
   const handleSlotsReady = (filledSlots: any) => {
     console.log("Slots ready:", filledSlots);
     setSlots(filledSlots);
+
+    // Add a contextual message before showing the plan trigger
+    setMessages(prev => [...prev, {
+       role: 'assistant', 
+       message: 'Okay, I have all the parameters. Please select your relevant cap table data range in the sheet, including headers, then click \"Get Selected Range\".' 
+    }]);
+
     setIsReady(true);
-    setPlanOps([]);
+    // setPlanOps([]); // Already cleared elsewhere or maybe not needed
     setErrorMessage(null);
-    setSelectedRangeAddress(null);
+    setSelectedRangeAddress(null); // Ensure range is cleared initially
     setPlanTaskId(null);
+    setFinalPlanData(null); // Clear any previous plan data
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
   };
 
   const handleChatError = (message: string) => {
     setErrorMessage(message);
     setIsLoading(false);
+  };
+
+  const clearProgressInterval = () => {
+      if (progressIntervalRef.current) {
+          clearInterval(progressIntervalRef.current);
+          progressIntervalRef.current = null;
+      }
+      setPlanProgress(0); // Reset progress
   };
 
   const checkPlanStatus = async (taskId: string, formatting: RangeFormatting | null) => {
@@ -80,15 +105,20 @@ export default function App() {
       if (statusResponse.status === "completed") {
         console.log("Plan generation completed!");
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        clearProgressInterval(); // Stop fake progress
+        setPlanProgress(100); // SET progress to 100%
 
         setFinalPlanData({
           backendResult: statusResponse.result,
           formatting: formatting,
         });
         setPlanOps(statusResponse.result.ops || []);
-
-        setIsLoading(false);
-        setPlanTaskId(null);
+        
+        // Delay resetting isLoading slightly to allow 100% to show
+        setTimeout(() => { 
+           setIsLoading(false); 
+           setPlanTaskId(null);
+        }, 300); // Short delay (e.g., 300ms)
       } else if (statusResponse.status === "failed") {
         console.error("Plan generation failed:", statusResponse.error);
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
@@ -97,6 +127,7 @@ export default function App() {
         setPlanTaskId(null);
         setCapturedFormatting(null);
         setFinalPlanData(null);
+        clearProgressInterval(); // Stop progress on failure
       } else {
         console.log("Plan still processing...");
       }
@@ -108,6 +139,7 @@ export default function App() {
       setPlanTaskId(null);
       setCapturedFormatting(null);
       setFinalPlanData(null);
+      clearProgressInterval(); // Stop progress on error
     }
   };
 
@@ -116,6 +148,7 @@ export default function App() {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
+      clearProgressInterval(); // Also clear progress interval
     };
   }, []);
 
@@ -145,9 +178,10 @@ export default function App() {
     // --- If address is confirmed, proceed to generate plan ---
     setIsLoading(true);
     setErrorMessage(null);
-    // setPlanOps([]); // Clear previous ops
-    setFinalPlanData(null); // Clear previous final data
-    setCapturedFormatting(null); // Clear previous formatting
+    setFinalPlanData(null); 
+    setCapturedFormatting(null); 
+    clearProgressInterval();
+    setPlanProgress(5); 
 
     try {
       console.log(`Reading sheet data from confirmed range: ${currentAddress}...`);
@@ -168,7 +202,6 @@ export default function App() {
         sheetConnector
       );
 
-      // Store formatting and start polling
       if (initialResponse && initialResponse.task_id && initialResponse.rangeFormatting) {
         console.log(`Plan generation started with Task ID: ${initialResponse.task_id}`);
         // Store the captured formatting in state
@@ -177,11 +210,25 @@ export default function App() {
         setIsLoading(true);
         // Clear previous interval if any
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        // Start new polling interval
+
+        // --- Start Fake Progress Interval (Faster) ---
+        const totalDurationSeconds = 20; // REDUCED target duration
+        const intervalDelay = 500; 
+        const increments = (totalDurationSeconds * 1000) / intervalDelay;
+        const progressStep = 95 / increments; 
+
+        progressIntervalRef.current = setInterval(() => {
+          setPlanProgress(prev => {
+             const nextProgress = prev + progressStep;
+             return Math.min(nextProgress, 99); 
+          });
+        }, intervalDelay);
+        // ------------------------------------------
+
+        // Start polling interval (keep existing logic)
         pollingIntervalRef.current = setInterval(() => {
-          // Pass the task ID AND the captured formatting to checkPlanStatus
           checkPlanStatus(initialResponse.task_id, initialResponse.rangeFormatting);
-        }, 10000); // Poll every 10 seconds
+        }, 10000); 
       } else {
         throw new Error("Failed to start plan generation task or capture formatting.");
       }
@@ -191,6 +238,7 @@ export default function App() {
       setIsLoading(false);
       setPlanTaskId(null);
       setCapturedFormatting(null); // Clear formatting on error too
+      clearProgressInterval(); // Clear progress on setup error
     }
   };
 
@@ -207,40 +255,44 @@ export default function App() {
     //     return;
     // }
 
-    setIsLoading(true);
+    setIsApplyingPlan(true);
     setErrorMessage(null);
+    setSuccessMessage(null); // Clear previous success message
     try {
-      // console.log("Applying operations:", approvedOps); // Log the whole plan data instead?
       console.log("Applying formatted plan with:", finalPlanData);
-
-      // Call the NEW function with the combined data
+      
       await sheetConnector.applyFormattedPlan(
         finalPlanData.backendResult,
         finalPlanData.formatting
       );
-
+      
       console.log("Formatted plan applied successfully.");
+      
+      // --- Show Success Notification --- 
+      setSuccessMessage("Plan applied successfully!");
+      setTimeout(() => {
+          setSuccessMessage(null);
+          // Reset UI state AFTER success message fades
+          setPlanOps([]); 
+          setFinalPlanData(null);
+          setCapturedFormatting(null);
+          setIsReady(false); 
+          setSelectedRangeAddress(null);
+          setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined});
+      }, 2500); // Show message for 2.5 seconds
+      // ----------------------------------
 
-      // Clear state after successful application
-      setPlanOps([]); // Clear ops used by PreviewPane
-      setFinalPlanData(null);
-      setCapturedFormatting(null); // Though already null if finalPlanData was set
-      setIsReady(false); // Go back to chat view? Or show a success message?
-      setSelectedRangeAddress(null); // Clear selected address
-      setSlots({
-        roundType: undefined,
-        amount: undefined,
-        preMoney: undefined,
-        poolPct: undefined,
-      }); // Reset slots
-    } catch (error: any) {
-      console.error("Error applying formatted plan:", error);
-      setErrorMessage(error.message || "Failed to apply formatted plan. Check console.");
-      // Consider leaving finalPlanData intact on error for potential retry?
+      // Don't reset state immediately, wait for timeout above
+      // setPlanOps([]); 
       // setFinalPlanData(null);
-      // setCapturedFormatting(null);
+      // ...
+      
+    } catch (error: any) {
+      console.error('Error applying formatted plan:', error);
+      setErrorMessage(error.message || 'Failed to apply formatted plan. Check console.');
     } finally {
-      setIsLoading(false);
+      // Set applying to false immediately, but delay other state resets
+      setIsApplyingPlan(false);
     }
   };
 
@@ -282,6 +334,7 @@ export default function App() {
     }
   };
 
+  // Effect for simulating streaming text
   useEffect(() => {
     if (streamingIntervalRef.current) {
       clearInterval(streamingIntervalRef.current);
@@ -302,13 +355,15 @@ export default function App() {
           // Finished streaming
           if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
           streamingIntervalRef.current = null;
-          // Add the completed message to the main history
+          
+          // Add the completed message to the main history (NO flag needed)
           setMessages(prev => [...prev, { role: 'assistant', message }]);
-          setPendingAssistantMessage(null); // Clear pending message
-          setDisplayedAssistantMessage(""); // Clear displayed message
+          
+          // Clear pending/displayed state
+          setPendingAssistantMessage(null); 
+          setDisplayedAssistantMessage(""); 
         }
-      }, 50); // Adjust delay (milliseconds) for streaming speed (50ms = 20 chars/sec)
-
+      }, 50); 
     }
 
     // Cleanup function to clear interval if component unmounts or pending message changes
@@ -391,19 +446,33 @@ export default function App() {
           <PreviewPane
             ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
             onApply={handleApplyPlan}
-            isLoading={isLoading}
+            isLoading={isLoading || isApplyingPlan}
+            isApplying={isApplyingPlan}
           />
         )}
       </div>
 
       {/* Footer for messages */}
       <div style={appStyles.footer}>
-        {errorMessage && <div style={appStyles.errorMessage}>Error: {errorMessage}</div>}
-
-        {isLoading && !isAssistantThinking && (
-          <div style={appStyles.loadingIndicator} className="loading-indicator-pulse">
-            {planTaskId ? 'Generating plan... (this may take up to 1 minute)' : 'Processing...'}
-          </div>
+        {/* Show Success Message */}
+        {successMessage && (
+           <div style={appStyles.successMessage}>{successMessage}</div>
+        )}
+        {/* Show Error Message (only if no success message) */}
+        {errorMessage && !successMessage && (
+            <div style={appStyles.errorMessage}>Error: {errorMessage}</div>
+        )}
+        {/* Show Progress Bar (only if no success/error) */}
+        {isLoading && planTaskId && !finalPlanData && !errorMessage && !successMessage && (
+           // Render Progress Bar when plan is generating
+           <div style={appStyles.progressBarContainer}>
+             <div 
+               style={{...appStyles.progressBarFill, width: `${planProgress}%`}} 
+             />
+             <span style={appStyles.progressBarText}>
+               Generating plan... ({Math.round(planProgress)}%)
+             </span>
+           </div>
         )}
       </div>
     </div>
@@ -465,22 +534,53 @@ const appStyles: { [key: string]: React.CSSProperties } = {
     cursor: "not-allowed",
   },
   footer: {
-    minHeight: "40px", // Ensure footer has some height even when empty
-    marginTop: "auto", // Push footer to bottom
-    // backgroundColor: 'lightgoldenrodyellow' // DEBUG: Remove Footer background
+    minHeight: '60px', 
+    marginTop: 'auto', 
+    paddingTop: '10px', 
+    position: 'relative' // Needed for positioning success message maybe
   },
   errorMessage: {
-    color: "#a80000", // Office error red
-    marginTop: "10px",
-    padding: "10px",
-    border: "1px solid #fde7e9",
-    backgroundColor: "#fde7e9", // Light red background
-    borderRadius: "2px",
+      color: '#a80000',
+      marginTop: '10px',
+      padding: '10px',
+      border: '1px solid #fde7e9',
+      backgroundColor: '#fde7e9', 
+      borderRadius: '2px'
   },
-  loadingIndicator: {
-    marginTop: "10px",
-    padding: "10px",
-    fontStyle: "italic",
-    color: "#555",
+  successMessage: { // Style for success notification
+      color: '#155724', // Dark green
+      backgroundColor: '#d4edda', // Light green
+      border: '1px solid #c3e6cb',
+      padding: '10px',
+      borderRadius: '4px',
+      textAlign: 'center',
+      marginTop: '10px',
+      // Optional: Add fade-out animation later
   },
+  progressBarContainer: {
+      height: '20px',
+      backgroundColor: '#e0e0e0', // Light grey background
+      borderRadius: '10px',
+      overflow: 'hidden',
+      position: 'relative', // Needed for text overlay
+      marginTop: '10px'
+  },
+  progressBarFill: {
+      height: '100%',
+      backgroundColor: '#0078d4', // Office blue
+      borderRadius: '10px 0 0 10px', // Keep left edge rounded
+      transition: 'width 0.4s ease-in-out' // Smooth transition for width change
+  },
+  progressBarText: {
+      position: 'absolute',
+      width: '100%',
+      textAlign: 'center',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      color: '#fff', // White text
+      mixBlendMode: 'difference', // Makes text visible on blue/grey bg
+      fontSize: '0.8em',
+      lineHeight: '20px'
+  }
 };

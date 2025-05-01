@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ChatService, ChatMessage } from "../services/chatService";
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -25,6 +24,8 @@ export function ChatView({
 }: ChatViewProps) {
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [ellipsis, setEllipsis] = useState('.');
+  const thinkingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -33,6 +34,30 @@ export function ChatView({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isThinking, streamingMessage]);
+
+  useEffect(() => {
+    if (isThinking) {
+      thinkingIntervalRef.current = setInterval(() => {
+        setEllipsis(prev => {
+          if (prev === '...') return '.';
+          if (prev === '..') return '...';
+          return '..';
+        });
+      }, 400);
+    } else {
+      if (thinkingIntervalRef.current) {
+        clearInterval(thinkingIntervalRef.current);
+        thinkingIntervalRef.current = null;
+      }
+      setEllipsis('.');
+    }
+
+    return () => {
+      if (thinkingIntervalRef.current) {
+        clearInterval(thinkingIntervalRef.current);
+      }
+    };
+  }, [isThinking]);
 
   const handleSend = () => {
     if (inputValue.trim() && !isLoading && !isThinking) {
@@ -53,11 +78,17 @@ export function ChatView({
 
   return (
     <div className="flex flex-col flex-grow overflow-hidden font-sans text-base text-[#0D0D0D] h-full">
-      {/* Inject keyframes needed for thinking animation */}
       <style>{`
         @keyframes pulseOpacity {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in-message {
+            animation: fadeIn 0.3s ease-out forwards;
         }
       `}</style>
 
@@ -65,21 +96,24 @@ export function ChatView({
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words ${
-              msg.role === "user" ? "bg-gray-100 ml-auto rounded-[20px]" : "mr-auto"
+            className={`my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words ${ 
+              msg.role === "user" ? "bg-gray-100 ml-auto rounded-[20px]" : "bg-white mr-auto"
             }`}
           >
             {msg.message}
           </div>
         ))}
         {streamingMessage && (
-          <div className="my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words mr-auto">
+          <div className="my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words mr-auto bg-white fade-in-message">
             {streamingMessage}
           </div>
         )}
         {isThinking && (
-          <div className="my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words mr-auto loading-indicator-pulse" style={styles.thinkingMessage}>
-            Thinking...
+          <div 
+            className="my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words mr-auto fade-in-message" 
+            style={styles.thinkingMessage}
+          >
+            Thinking{ellipsis}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -111,16 +145,11 @@ export function ChatView({
   );
 }
 
-// --- Styles (Restore this definition) --- 
 const styles: { [key: string]: React.CSSProperties } = {
   chatViewContainer: {
     display: 'flex',
     flexDirection: 'column',
     height: '100%',
-    // Use Tailwind classes now for background/border/rounding/font?
-    // backgroundColor: '#f7f7f7',
-    // border: '1px solid #ccc',
-    // borderRadius: '4px',
     overflow: 'hidden'
   },
   messagesContainer: {
@@ -129,31 +158,27 @@ const styles: { [key: string]: React.CSSProperties } = {
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px' // Add gap between messages
+    gap: '10px'
   },
   userMessage: {
-    // Example: Use Tailwind if preferred: className="... bg-gray-100 ml-auto ..."
     alignSelf: 'flex-end',
-    backgroundColor: '#dcf8c6', // Light green
+    backgroundColor: '#dcf8c6',
     padding: '8px 12px',
     borderRadius: '10px 10px 0 10px',
     maxWidth: '80%',
     wordWrap: 'break-word'
   },
   assistantMessage: {
-    // Example: Use Tailwind if preferred: className="... bg-white mr-auto ..."
     alignSelf: 'flex-start',
-    backgroundColor: '#ffffff', // White
+    backgroundColor: '#ffffff',
     padding: '8px 12px',
     borderRadius: '10px 10px 10px 0',
     maxWidth: '80%',
     wordWrap: 'break-word',
-    border: '1px solid #eee'
   },
-  thinkingMessage: { // Style for the thinking indicator
+  thinkingMessage: {
     fontStyle: 'italic',
     color: '#777',
-    // Add pulsing animation directly here
     animationName: 'pulseOpacity',
     animationDuration: '1.5s',
     animationTimingFunction: 'ease-in-out',
@@ -175,7 +200,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   button: {
     padding: '10px 15px',
-    backgroundColor: '#0078d4', // Office blue
+    backgroundColor: '#0078d4',
     color: 'white',
     border: 'none',
     borderRadius: '4px',
@@ -186,10 +211,4 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundColor: '#c7e0f4',
     cursor: 'not-allowed'
   },
-  // Error style might not be needed if handled in App.tsx
-  // error: {
-  //   color: 'red',
-  //   padding: '5px 10px',
-  //   textAlign: 'center'
-  // }
 };
