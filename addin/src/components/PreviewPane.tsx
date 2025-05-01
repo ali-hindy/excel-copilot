@@ -50,36 +50,64 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoadin
 
   const hasSelectedOps = ops.some(op => checkedOps[op.id]);
 
+  // Base classes for apply button
+  const applyButtonBase = "mt-auto py-2 px-4 bg-black text-white border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 w-full font-semibold text-base";
+  const applyButtonDisabled = "opacity-50 cursor-not-allowed bg-gray-700 hover:bg-gray-700";
+
+  // Revert to side-by-side control button styles
+  const controlButtonBase = "bg-black text-white border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 px-4 py-2 font-semibold text-sm"; // Removed width, flex, justify-center; added padding
+  const controlButtonDisabled = "opacity-50 cursor-not-allowed bg-gray-700 hover:bg-gray-700";
+
   return (
-    <div style={previewStyles.paneContainer}>
-      <h4 style={previewStyles.header}>Generated Plan Operations:</h4>
-      <div style={previewStyles.controls}>
-        <button style={isLoading ? {...previewStyles.controlButton, ...previewStyles.buttonDisabled} : previewStyles.controlButton} onClick={handleSelectAll} disabled={isLoading}>Select All</button>
-        <button style={isLoading ? {...previewStyles.controlButton, ...previewStyles.buttonDisabled} : previewStyles.controlButton} onClick={handleDeselectAll} disabled={isLoading}>Deselect All</button>
+    // Apply glassmorphism container styles + flex layout
+    <div className="p-3 border border-black/50 rounded-lg bg-white/20 backdrop-blur-md shadow-xl flex flex-col flex-grow overflow-hidden">
+      <h4 className="text-lg font-semibold mb-3 text-black">Generated Plan Operations:</h4>
+      {/* Revert controls container to horizontal layout, centered */}
+      <div className="mb-3 flex justify-center gap-2">
+        <button
+          className={`${controlButtonBase} ${isLoading ? controlButtonDisabled : ''}`}
+          onClick={handleSelectAll}
+          disabled={isLoading}
+        >
+          Select All
+        </button>
+        <button
+          className={`${controlButtonBase} ${isLoading ? controlButtonDisabled : ''}`}
+          onClick={handleDeselectAll}
+          disabled={isLoading}
+        >
+          Deselect All
+        </button>
       </div>
-      <ul style={previewStyles.opList}>
+      {/* Scrollable list with borders */}
+      <ul className="list-none p-0 m-0 mb-4 overflow-y-auto flex-grow border-t border-b border-black/20 divide-y divide-black/10">
         {ops.map((op) => (
-          <li key={op.id} style={previewStyles.opItem}>
-            <input 
-              type="checkbox" 
-              style={previewStyles.checkbox}
-              checked={checkedOps[op.id] || false} 
+          // List item styling
+          <li key={op.id} className="flex items-center py-2 px-1">
+            <input
+              type="checkbox"
+              // Update checkbox styling for black appearance
+              className="mr-3 flex-shrink-0 h-4 w-4 rounded border-black/50 text-black focus:ring-black disabled:opacity-50 accent-black"
+              checked={checkedOps[op.id] || false}
               onChange={() => handleCheckboxChange(op.id)}
               disabled={isLoading}
             />
-            <span style={previewStyles.opDetails}>
-              <strong style={{fontWeight: 600}}>{op.id}:</strong> {op.type} on {op.range} 
-              {op.values && <span style={previewStyles.detail}> - Values: {JSON.stringify(op.values).substring(0, 30)}...</span>}
-              {op.formula && <span style={previewStyles.detail}> - Formula: {op.formula}</span>}
-              {op.color && <span style={previewStyles.detail}> - Color: {op.color}</span>}
-              {op.note && <span style={previewStyles.detail}> - Note: {op.note}</span>}
+            {/* Operation details styling */}
+            <span className="text-sm leading-snug text-black">
+              <strong className="font-semibold">{op.id}:</strong> {op.type} on {op.range}
+              {/* Detail styling */}
+              {op.values && <span className="block ml-3 text-xs text-gray-700"> - Values: {JSON.stringify(op.values).substring(0, 30)}...</span>}
+              {op.formula && <span className="block ml-3 text-xs text-gray-700"> - Formula: {op.formula}</span>}
+              {op.color && <span className="block ml-3 text-xs text-gray-700"> - Color: {op.color}</span>}
+              {op.note && <span className="block ml-3 text-xs text-gray-700"> - Note: {op.note}</span>}
             </span>
           </li>
         ))}
       </ul>
-      <button 
-        style={isLoading || !hasSelectedOps ? {...previewStyles.applyButton, ...previewStyles.buttonDisabled} : previewStyles.applyButton} 
-        onClick={handleApplyClick} 
+      <button
+        // Apply button styling with disabled state
+        className={`${applyButtonBase} ${(isLoading || !hasSelectedOps) ? applyButtonDisabled : ''}`}
+        onClick={handleApplyClick}
         disabled={isLoading || !hasSelectedOps}
       >
         {isLoading ? 'Applying...' : 'Apply Approved Operations'}
@@ -87,81 +115,3 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoadin
     </div>
   );
 };
-
-// Inline styles for PreviewPane
-const previewStyles: { [key: string]: React.CSSProperties } = {
-  paneContainer: {
-    border: '1px solid #eee',
-    borderRadius: '4px',
-    padding: '15px',
-    marginTop: '10px',
-    display: 'flex',
-    flexDirection: 'column',
-    flexGrow: 1,
-    overflow: 'hidden' // Prevent container scroll, list scrolls
-  },
-  header: {
-      marginTop: 0,
-      marginBottom: '10px',
-      fontSize: '1.1em',
-      fontWeight: 600 // Slightly bolder header
-  },
-  controls: {
-    marginBottom: '10px',
-    display: 'flex',
-    gap: '10px',
-  },
-  controlButton: {
-      padding: '5px 10px',
-      fontSize: '0.9em',
-      backgroundColor: '#f0f0f0',
-      border: '1px solid #ccc',
-      borderRadius: '3px',
-      cursor: 'pointer'
-  },
-  opList: {
-    listStyle: 'none',
-    padding: '0',
-    margin: '0 0 15px 0',
-    overflowY: 'auto',
-    flexGrow: 1,
-    borderTop: '1px solid #eee',
-    borderBottom: '1px solid #eee'
-  },
-  opItem: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '8px 5px',
-    borderBottom: '1px solid #f5f5f5',
-  },
-  checkbox: {
-    marginRight: '10px',
-    flexShrink: 0 // Prevent checkbox from shrinking
-  },
-  opDetails: {
-    fontSize: '0.95em',
-    lineHeight: '1.3'
-  },
-  detail: {
-      display: 'block', // Put extra details on new lines
-      marginLeft: '10px',
-      fontSize: '0.9em',
-      color: '#555'
-  },
-  applyButton: {
-    marginTop: 'auto', // Push to bottom if list is short
-    padding: '10px 16px',
-    backgroundColor: '#107c10', // Office green
-    color: 'white',
-    border: 'none',
-    borderRadius: '2px',
-    cursor: 'pointer',
-    fontSize: '1em',
-    fontWeight: 600
-  },
-  buttonDisabled: {
-    cursor: 'not-allowed',
-    opacity: 0.6,
-    backgroundColor: '#ccc' // Generic disabled background
-  }
-}; 
