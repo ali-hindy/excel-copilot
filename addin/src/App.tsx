@@ -37,7 +37,6 @@ export default function App() {
   const [capturedFormatting, setCapturedFormatting] = useState<RangeFormatting | null>(null);
   // NEW State for combined final data
   const [finalPlanData, setFinalPlanData] = useState<FinalPlanData | null>(null);
-  
 
   const [sheetConnector] = useState(() => new SheetConnector());
   const [chatService] = useState(() => new ChatService("https://bbaf-171-66-12-34.ngrok-free.app"));
@@ -60,12 +59,12 @@ export default function App() {
 
   const checkPlanStatus = async (taskId: string, formatting: RangeFormatting | null) => {
     if (!taskId || !formatting) {
-        console.error("Polling started without formatting info, stopping.");
-        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        setErrorMessage("Internal error: Formatting info lost during polling setup.")
-        setIsLoading(false);
-        setPlanTaskId(null);
-        return;
+      console.error("Polling started without formatting info, stopping.");
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      setErrorMessage("Internal error: Formatting info lost during polling setup.");
+      setIsLoading(false);
+      setPlanTaskId(null);
+      return;
     }
     console.log(`Checking status for task: ${taskId}`);
     try {
@@ -78,13 +77,12 @@ export default function App() {
 
         setFinalPlanData({
           backendResult: statusResponse.result,
-          formatting: formatting
+          formatting: formatting,
         });
         setPlanOps(statusResponse.result.ops || []);
-        
+
         setIsLoading(false);
         setPlanTaskId(null);
-
       } else if (statusResponse.status === "failed") {
         console.error("Plan generation failed:", statusResponse.error);
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
@@ -138,7 +136,7 @@ export default function App() {
       return; // Return if we only fetched the address this time
     }
 
-    // --- If address is confirmed, proceed to generate plan --- 
+    // --- If address is confirmed, proceed to generate plan ---
     setIsLoading(true);
     setErrorMessage(null);
     // setPlanOps([]); // Clear previous ops
@@ -149,16 +147,21 @@ export default function App() {
       console.log(`Reading sheet data from confirmed range: ${currentAddress}...`);
       const sheetData = await sheetConnector.getRangeData(currentAddress);
       console.log("Sheet data read from confirmed range.");
-      
+
       // No need to format here, backend expects raw data
-      // const formattedSheetData = sheetData.map(row => 
+      // const formattedSheetData = sheetData.map(row =>
       //   row.map(cell => cell === null || cell === undefined ? "" : String(cell))
       // );
-      
+
       console.log("Requesting plan generation and capturing formatting...");
       // Call generatePlan WITH the sheetConnector instance
-      const initialResponse = await chatService.generatePlan(slots, sheetData, currentAddress, sheetConnector);
-      
+      const initialResponse = await chatService.generatePlan(
+        slots,
+        sheetData,
+        currentAddress,
+        sheetConnector
+      );
+
       // Store formatting and start polling
       if (initialResponse && initialResponse.task_id && initialResponse.rangeFormatting) {
         console.log(`Plan generation started with Task ID: ${initialResponse.task_id}`);
@@ -177,8 +180,8 @@ export default function App() {
         throw new Error("Failed to start plan generation task or capture formatting.");
       }
     } catch (error: any) {
-      console.error('Error during plan generation setup:', error); // Clarified log
-      setErrorMessage(error.message || 'Failed to generate plan. Please check logs.');
+      console.error("Error during plan generation setup:", error); // Clarified log
+      setErrorMessage(error.message || "Failed to generate plan. Please check logs.");
       setIsLoading(false);
       setPlanTaskId(null);
       setCapturedFormatting(null); // Clear formatting on error too
@@ -189,9 +192,8 @@ export default function App() {
     // We might not need approvedOps if we apply the whole result directly
     // Keep it for now in case PreviewPane filtering is still desired, but we'll use finalPlanData
     if (!finalPlanData) {
-        setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
-        return;
-
+      setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
+      return;
     }
     // Maybe check approvedOps length if filtering is implemented in PreviewPane?
     // if (!approvedOps || approvedOps.length === 0) {
@@ -204,27 +206,33 @@ export default function App() {
     try {
       // console.log("Applying operations:", approvedOps); // Log the whole plan data instead?
       console.log("Applying formatted plan with:", finalPlanData);
-      
+
       // Call the NEW function with the combined data
-      await sheetConnector.applyFormattedPlan(finalPlanData.backendResult, finalPlanData.formatting);
-      
+      await sheetConnector.applyFormattedPlan(
+        finalPlanData.backendResult,
+        finalPlanData.formatting
+      );
+
       console.log("Formatted plan applied successfully.");
-      
+
       // Clear state after successful application
       setPlanOps([]); // Clear ops used by PreviewPane
       setFinalPlanData(null);
       setCapturedFormatting(null); // Though already null if finalPlanData was set
       setIsReady(false); // Go back to chat view? Or show a success message?
       setSelectedRangeAddress(null); // Clear selected address
-      setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined}); // Reset slots
-      
+      setSlots({
+        roundType: undefined,
+        amount: undefined,
+        preMoney: undefined,
+        poolPct: undefined,
+      }); // Reset slots
     } catch (error: any) {
-      console.error('Error applying formatted plan:', error);
-      setErrorMessage(error.message || 'Failed to apply formatted plan. Check console.');
+      console.error("Error applying formatted plan:", error);
+      setErrorMessage(error.message || "Failed to apply formatted plan. Check console.");
       // Consider leaving finalPlanData intact on error for potential retry?
       // setFinalPlanData(null);
       // setCapturedFormatting(null);
-
     } finally {
       setIsLoading(false);
     }
@@ -232,22 +240,26 @@ export default function App() {
 
   return (
     // Use ms-Fabric for some basic Office styling, add padding
-    <div className="app ms-Fabric" dir="ltr" style={appStyles.container}>
-      {/* <SlotStatusBar slots={slots} /> */}{/* Remove rendering */}
-      
-      {/* Add flex-grow to ChatView/PreviewPane containers */} 
-      <div style={appStyles.mainContent}>
-        {/* Show ChatView if not ready AND no final plan data exists */} 
+    <div className="app" dir="ltr" style={appStyles.container}>
+      {/* <SlotStatusBar slots={slots} /> */}
+      {/* Remove rendering */}
+
+      {/* Add flex-grow to ChatView/PreviewPane containers */}
+      <div
+        id="react-container"
+        className="flex flex-col justify-center"
+        style={appStyles.mainContent}
+      >
+        {/* Restore conditional rendering */}
         {!isReady && !finalPlanData && (
-            <ChatView 
-                chatService={chatService} 
-                onReady={handleSlotsReady} 
-                onError={handleChatError} 
-                isLoading={isLoading}
-            />
+          <ChatView
+            chatService={chatService}
+            onReady={handleSlotsReady}
+            onError={handleChatError}
+            isLoading={isLoading}
+          />
         )}
 
-        {/* Show Plan Trigger if ready AND no final plan data exists */} 
         {isReady && !finalPlanData && (
             <div style={appStyles.planTriggerContainer}>
                 <h4>Parameters Collected:</h4>
@@ -290,13 +302,13 @@ export default function App() {
             </div>
         )}
 
-        {/* Show PreviewPane if final plan data IS available */} 
+        {/* Show PreviewPane if final plan data IS available */}
         {finalPlanData && (
-            <PreviewPane 
-                ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
-                onApply={handleApplyPlan}
-                isLoading={isLoading}
-            />
+          <PreviewPane
+            ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
+            onApply={handleApplyPlan}
+            isLoading={isLoading}
+          />
         )}
       </div>
 
