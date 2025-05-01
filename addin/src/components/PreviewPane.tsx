@@ -5,9 +5,10 @@ interface PreviewPaneProps {
   ops: ActionOp[];
   onApply: (approvedOps: ActionOp[]) => void;
   isLoading: boolean;
+  isApplying?: boolean;
 }
 
-export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoading }) => {
+export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoading, isApplying }) => {
   // State to track checked status of each operation by its ID
   const [checkedOps, setCheckedOps] = useState<{ [key: string]: boolean }>({});
 
@@ -61,6 +62,11 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoadin
   return (
     // Apply glassmorphism container styles + flex layout
     <div className="p-3 border border-black/50 rounded-lg bg-white/20 backdrop-blur-md shadow-xl flex flex-col flex-grow overflow-hidden">
+      {/* Optional: Dimming overlay when applying */}
+      {isApplying && (
+        <div className={`${styles.overlay} ${styles.overlaySpinner}`}>Applying...</div>
+      )}
+
       <h4 className="text-lg font-semibold mb-3 text-black">Generated Plan Operations:</h4>
       {/* Revert controls container to horizontal layout, centered */}
       <div className="mb-3 flex justify-center gap-2">
@@ -90,7 +96,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoadin
               className="mr-3 flex-shrink-0 h-4 w-4 rounded border-black/50 text-black focus:ring-black disabled:opacity-50 accent-black"
               checked={checkedOps[op.id] || false}
               onChange={() => handleCheckboxChange(op.id)}
-              disabled={isLoading}
+              disabled={isLoading || isApplying}
             />
             {/* Operation details styling */}
             <span className="text-sm leading-snug text-black">
@@ -108,10 +114,33 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoadin
         // Apply button styling with disabled state
         className={`${applyButtonBase} ${(isLoading || !hasSelectedOps) ? applyButtonDisabled : ''}`}
         onClick={handleApplyClick}
-        disabled={isLoading || !hasSelectedOps}
+        disabled={isLoading || !hasSelectedOps || isApplying}
       >
-        {isLoading ? 'Applying...' : 'Apply Approved Operations'}
+        {isApplying ? 'Applying...' : 'Apply Approved Operations'}
       </button>
     </div>
   );
+};
+
+// --- Styles --- (Add overlay styles)
+const styles: { [key: string]: React.CSSProperties } = {
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)', // Semi-transparent white
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10 // Ensure it's on top
+  },
+  overlaySpinner: {
+    padding: '10px 20px',
+    backgroundColor: '#eee',
+    borderRadius: '5px',
+    fontSize: '1.1em'
+    // Add spinner graphic here later if desired
+  }
 };
