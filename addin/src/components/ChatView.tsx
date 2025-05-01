@@ -18,14 +18,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    setMessages([
-      {
-        role: "assistant",
-        message: 'Hello! How can I help you model your cap table today? (e.g., \"Model Series A\")',
-      },
-    ]);
-  }, []);
+  // useEffect(() => {
+  //   setMessages([
+  //     {
+  //       role: "assistant",
+  //       message: 'Hello! How can I help you model your cap table today? (e.g., \"Model Series A\")',
+  //     },
+  //   ]);
+  // }, []);
 
   useEffect(() => {
     if (messages.length > 1) {
@@ -55,39 +55,41 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
   };
 
   return (
-    <div style={chatStyles.chatContainer}>
-      <div style={chatStyles.messagesContainer}>
+    <div className="flex flex-col flex-grow overflow-hidden font-sans text-base text-[#0D0D0D] h-full">
+      <div className="flex flex-col flex-grow overflow-y-auto p-2.5 mb-2.5">
         {messages.map((msg, index) => (
           <div
             key={index}
-            style={{
-              ...chatStyles.messageBase,
-              ...(msg.role === "user" ? chatStyles.messageUser : chatStyles.messageAssistant),
-            }}
+            className={`my-2 py-2.5 px-4 rounded-[15px] max-w-[85%] leading-normal break-words ${
+              msg.role === "user" ? "bg-gray-100 ml-auto rounded-[20px]" : "mr-auto"
+            }`}
           >
             {msg.message}
           </div>
         ))}
+        {messages.length === 0 && (
+          <div className="text-center font-bold text-2xl text-gray-700 my-auto flex-grow flex items-center justify-center">
+            How can I help?!
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
       <div className="flex w-full cursor-text flex-col items-center justify-center border rounded-[18px] overflow-clip shadow-lg">
         <div className="relative flex w-full flex-auto flex-col">
           <input
-            style={chatStyles.inputField}
+            className="flex-grow py-3 pr-[45px] pl-[15px] border-none focus:outline-none"
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && handleSend()}
-            placeholder={isSending ? "Waiting for response..." : "How can I help you today?"}
+            placeholder={isSending ? "Waiting for response..." : "Give a finstruction!"}
             disabled={isSending}
           />
           <button
-            style={
-              !input.trim() || isSending
-                ? { ...chatStyles.button, ...chatStyles.buttonDisabled }
-                : chatStyles.button
-            }
+            className={`absolute right-2.5 top-1/2 transform -translate-y-1/2 p-0 w-8 h-8 bg-black text-white border-none rounded-full cursor-pointer text-xl flex items-center justify-center transition-colors duration-200 ease-in-out ${
+              !input.trim() || isSending ? "bg-gray-300 cursor-not-allowed text-gray-500" : "hover:bg-gray-700"
+            }`}
             onClick={handleSend}
             disabled={!input.trim() || isSending}
           >
@@ -97,67 +99,4 @@ export const ChatView: React.FC<ChatViewProps> = ({ chatService, onReady, onErro
       </div>
     </div>
   );
-};
-
-const chatStyles: { [key: string]: React.CSSProperties } = {
-  chatContainer: {
-    display: "flex",
-    flexDirection: "column",
-    flexGrow: 1,
-    overflow: "hidden",
-    fontFamily: "ui-sans-serif",
-    fontSize: "16px",
-    color: "#0D0D0D",
-  },
-  messagesContainer: {
-    flexGrow: 1,
-    overflowY: "auto",
-    padding: "10px",
-    marginBottom: "10px",
-    borderRadius: "4px",
-  },
-  messageBase: {
-    margin: "8px 0",
-    padding: "10px 15px",
-    borderRadius: "15px",
-    maxWidth: "85%",
-    lineHeight: "1.4",
-    wordWrap: "break-word",
-  },
-  messageUser: {
-    backgroundColor: "#F4F4F4",
-    marginLeft: "auto",
-    borderRadius: "20px",
-  },
-  messageAssistant: {
-    marginRight: "auto",
-  },
-  inputField: {
-    flexGrow: 1,
-    padding: "12px 45px 12px 15px",
-  },
-  button: {
-    position: "absolute",
-    right: "10px",
-    top: "50%",
-    transform: "translateY(calc(-50% + 1px))",
-    padding: "0",
-    width: "32px",
-    height: "32px",
-    backgroundColor: "#000",
-    color: "white",
-    border: "none",
-    borderRadius: "50%",
-    cursor: "pointer",
-    fontSize: "1.2em",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "background-color 0.2s ease",
-  },
-  buttonDisabled: {
-    backgroundColor: "#ccc",
-    cursor: "not-allowed",
-    color: "#777",
-  },
 };
