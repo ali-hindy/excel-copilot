@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChatView } from "./components/ChatView";
 import { PreviewPane } from "./components/PreviewPane";
-import { SheetConnector, ActionOp } from "./SheetConnector";
+import { SheetConnector, ActionOp, RangeFormatting } from "./SheetConnector";
 import { ChatService } from "./services/chatService";
 
-// Interface for backend result structure (adjust if needed based on actual backend response)
+// Interface for backend result structure - UPDATED
 interface BackendPlanResult {
   ops: ActionOp[];
   raw_llm_output?: string;
+  slots: any; // Add type if known
+  calculated_values: any; // Add type if known
+  column_mapping: any; // Add type if known
 }
 
 // Interface for the final combined data needed for applying the formatted plan
@@ -37,7 +40,7 @@ export default function App() {
   
 
   const [sheetConnector] = useState(() => new SheetConnector());
-  const [chatService] = useState(() => new ChatService("https://efa332809648.ngrok.app"));
+  const [chatService] = useState(() => new ChatService("https://bbaf-171-66-12-34.ngrok-free.app"));
 
   const handleSlotsReady = (filledSlots: any) => {
     console.log("Slots ready:", filledSlots);
@@ -267,30 +270,13 @@ export default function App() {
                   onClick={handleGeneratePlan} 
                   disabled={isLoading}
                 >
-                  Change Selection
+                  {isLoading 
+                    ? (planTaskId ? 'Generating Plan (takes ~4min)...': 'Getting Selection...') 
+                    : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
                 </button>
-              )}
-              <button
-                className={`rounded-lg cursor-pointer ${
-                  isLoading
-                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                    : "bg-black text-white hover:bg-gray-800"
-                }`}
-                onClick={handleGeneratePlan}
-                disabled={isLoading}
-              >
-                {isLoading
-                  ? planTaskId
-                    ? "Generating Plan (takes ~4min)..."
-                    : "Getting Selection..."
-                  : selectedRangeAddress
-                    ? "Confirm and Generate Plan"
-                    : "Get selected range"}
-              </button>
             </div>
-          </div>
         )}
-        
+
         {/* Show PreviewPane if final plan data IS available */} 
         {finalPlanData && (
             <PreviewPane 
@@ -298,7 +284,6 @@ export default function App() {
                 onApply={handleApplyPlan}
                 isLoading={isLoading}
             />
-
         )}
       </div>
 
