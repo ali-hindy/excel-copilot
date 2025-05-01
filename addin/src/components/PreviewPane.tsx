@@ -3,105 +3,36 @@ import { ActionOp } from '../SheetConnector'; // Import ActionOp type
 
 interface PreviewPaneProps {
   ops: ActionOp[];
-  onApply: (approvedOps: ActionOp[]) => void;
+  onAccept: () => void;
+  onReject: () => void;
   isLoading: boolean;
   isApplying?: boolean;
 }
 
-export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoading, isApplying }) => {
-  // State to track checked status of each operation by its ID
-  const [checkedOps, setCheckedOps] = useState<{ [key: string]: boolean }>({});
+export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onAccept, onReject, isLoading, isApplying }) => {
+  // Style for primary action buttons (Accept/Reject)
+  const actionButtonBase = "flex-1 py-2 px-4 border border-gray-600 rounded-lg cursor-pointer font-semibold text-base"; // flex-1 to share space
+  const acceptButtonActive = "bg-black text-white hover:bg-gray-800";
+  const rejectButtonActive = "bg-gray-200 text-black hover:bg-gray-300"; // Secondary style for reject
+  const actionButtonDisabled = "opacity-50 cursor-not-allowed bg-gray-700 hover:bg-gray-700 text-gray-400";
 
-  // Initialize checked state when ops list changes (e.g., new plan generated)
-  useEffect(() => {
-    const initialCheckedState: { [key: string]: boolean } = {};
-    ops.forEach(op => {
-      initialCheckedState[op.id] = true; // Default all to checked
-    });
-    setCheckedOps(initialCheckedState);
-  }, [ops]);
-
-  const handleCheckboxChange = (opId: string) => {
-    setCheckedOps(prev => ({
-      ...prev,
-      [opId]: !prev[opId]
-    }));
-  };
-
-  const handleSelectAll = () => {
-    const allChecked: { [key: string]: boolean } = {};
-    ops.forEach(op => {
-      allChecked[op.id] = true;
-    });
-    setCheckedOps(allChecked);
-  };
-
-  const handleDeselectAll = () => {
-    const noneChecked: { [key: string]: boolean } = {};
-    ops.forEach(op => {
-      noneChecked[op.id] = false;
-    });
-    setCheckedOps(noneChecked);
-  };
-
-  const handleApplyClick = () => {
-    const approvedOps = ops.filter(op => checkedOps[op.id]);
-    onApply(approvedOps);
-  };
-
-  const hasSelectedOps = ops.some(op => checkedOps[op.id]);
-
-  // Base classes for apply button
-  const applyButtonBase = "mt-auto py-2 px-4 bg-black text-white border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 w-full font-semibold text-base";
-  const applyButtonDisabled = "opacity-50 cursor-not-allowed bg-gray-700 hover:bg-gray-700";
-
-  // Revert to side-by-side control button styles
-  const controlButtonBase = "bg-black text-white border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800 px-4 py-2 font-semibold text-sm"; // Removed width, flex, justify-center; added padding
-  const controlButtonDisabled = "opacity-50 cursor-not-allowed bg-gray-700 hover:bg-gray-700";
+  // Determine if buttons should be disabled
+  const isDisabled = isLoading || isApplying;
 
   return (
-    // Apply glassmorphism container styles + flex layout
     <div className="p-3 border border-black/50 rounded-lg bg-white/20 backdrop-blur-md shadow-xl flex flex-col flex-grow overflow-hidden">
-      {/* Optional: Dimming overlay when applying */}
+      {/* Optional: Dimming overlay when applying (accepting) */}
       {isApplying && (
-        <div className={`${styles.overlay} ${styles.overlaySpinner}`}>Applying...</div>
+        <div style={styles.overlay}>Accepting Preview...</div>
       )}
 
-      <h4 className="text-lg font-semibold mb-3 text-black">Generated Plan Operations:</h4>
-      {/* Revert controls container to horizontal layout, centered */}
-      <div className="mb-3 flex justify-center gap-2">
-        <button
-          className={`${controlButtonBase} ${isLoading ? controlButtonDisabled : ''}`}
-          onClick={handleSelectAll}
-          disabled={isLoading}
-        >
-          Select All
-        </button>
-        <button
-          className={`${controlButtonBase} ${isLoading ? controlButtonDisabled : ''}`}
-          onClick={handleDeselectAll}
-          disabled={isLoading}
-        >
-          Deselect All
-        </button>
-      </div>
-      {/* Scrollable list with borders */}
+      <h4 className="text-lg font-semibold mb-3 text-black">Preview Plan Operations:</h4>
+
       <ul className="list-none p-0 m-0 mb-4 overflow-y-auto flex-grow border-t border-b border-black/20 divide-y divide-black/10">
         {ops.map((op) => (
-          // List item styling
-          <li key={op.id} className="flex items-center py-2 px-1">
-            <input
-              type="checkbox"
-              // Update checkbox styling for black appearance
-              className="mr-3 flex-shrink-0 h-4 w-4 rounded border-black/50 text-black focus:ring-black disabled:opacity-50 accent-black"
-              checked={checkedOps[op.id] || false}
-              onChange={() => handleCheckboxChange(op.id)}
-              disabled={isLoading || isApplying}
-            />
-            {/* Operation details styling */}
+          <li key={op.id} className="py-2 px-1">
             <span className="text-sm leading-snug text-black">
               <strong className="font-semibold">{op.id}:</strong> {op.type} on {op.range}
-              {/* Detail styling */}
               {op.values && <span className="block ml-3 text-xs text-gray-700"> - Values: {JSON.stringify(op.values).substring(0, 30)}...</span>}
               {op.formula && <span className="block ml-3 text-xs text-gray-700"> - Formula: {op.formula}</span>}
               {op.color && <span className="block ml-3 text-xs text-gray-700"> - Color: {op.color}</span>}
@@ -110,19 +41,28 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ ops, onApply, isLoadin
           </li>
         ))}
       </ul>
-      <button
-        // Apply button styling with disabled state
-        className={`${applyButtonBase} ${(isLoading || !hasSelectedOps) ? applyButtonDisabled : ''}`}
-        onClick={handleApplyClick}
-        disabled={isLoading || !hasSelectedOps || isApplying}
-      >
-        {isApplying ? 'Applying...' : 'Apply Approved Operations'}
-      </button>
+
+      <div className="flex gap-3 mt-auto">
+        <button
+          className={`${actionButtonBase} ${rejectButtonActive} ${isDisabled ? actionButtonDisabled : ''}`}
+          onClick={onReject}
+          disabled={isDisabled}
+        >
+          Reject Preview
+        </button>
+        <button
+          className={`${actionButtonBase} ${acceptButtonActive} ${isDisabled ? actionButtonDisabled : ''}`}
+          onClick={onAccept}
+          disabled={isDisabled}
+        >
+          {isApplying ? 'Accepting...' : 'Accept Preview'}
+        </button>
+      </div>
     </div>
   );
 };
 
-// --- Styles --- (Add overlay styles)
+// --- Styles --- (Keep overlay styles)
 const styles: { [key: string]: React.CSSProperties } = {
   overlay: {
     position: 'absolute',
@@ -134,13 +74,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 10 // Ensure it's on top
-  },
-  overlaySpinner: {
-    padding: '10px 20px',
-    backgroundColor: '#eee',
-    borderRadius: '5px',
-    fontSize: '1.1em'
-    // Add spinner graphic here later if desired
+    zIndex: 10, // Ensure it's on top
+    fontSize: '1.1em',
+    color: '#333' // Make text visible
   }
 };

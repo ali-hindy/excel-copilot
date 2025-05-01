@@ -1,17 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChatView, ChatMessage } from "./components/ChatView";
 import { PreviewPane } from "./components/PreviewPane";
-import { SheetConnector, ActionOp, RangeFormatting } from "./SheetConnector";
+import { SheetConnector, ActionOp, RangeFormatting, BackendPlanResult } from "./SheetConnector";
 import { ChatService, ChatResponse } from "./services/chatService";
-
-// Interface for backend result structure - UPDATED
-interface BackendPlanResult {
-  ops: ActionOp[];
-  raw_llm_output?: string;
-  slots: any; // Add type if known
-  calculated_values: any; // Add type if known
-  column_mapping: any; // Add type if known
-}
 
 // Interface for the final combined data needed for applying the formatted plan
 interface FinalPlanData {
@@ -49,6 +40,9 @@ export default function App() {
   const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [isApplyingPlan, setIsApplyingPlan] = useState(false);
+  const [isRejectingPreview, setIsRejectingPreview] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isPreviewActive, setIsPreviewActive] = useState<boolean>(false);
 
   // State for success message
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -72,6 +66,7 @@ export default function App() {
     setSelectedRangeAddress(null); // Ensure range is cleared initially
     setPlanTaskId(null);
     setFinalPlanData(null); // Clear any previous plan data
+    setIsPreviewActive(false);
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
   };
 
@@ -88,6 +83,31 @@ export default function App() {
       setPlanProgress(0); // Reset progress
   };
 
+  const showPreview = async (backendResult: BackendPlanResult, formatting: RangeFormatting) => {
+    setIsPreviewing(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    console.log("Attempting to apply preview...");
+    try {
+      await sheetConnector.applyPreview(backendResult.ops);
+      console.log("Preview applied to sheet successfully.");
+      
+      setFinalPlanData({ backendResult, formatting });
+      setIsPreviewActive(true);
+      setPlanOps(backendResult.ops);
+
+    } catch (error: any) {
+      console.error("Error applying preview:", error);
+      setErrorMessage(`Failed to apply preview: ${error.message}`);
+      setFinalPlanData(null);
+      setIsPreviewActive(false);
+      setPlanOps([]);
+    } finally {
+      setIsPreviewing(false);
+      setIsLoading(false);
+    }
+  };
+
   const checkPlanStatus = async (taskId: string, formatting: RangeFormatting | null) => {
     if (!taskId || !formatting) {
       console.error("Polling started without formatting info, stopping.");
@@ -95,6 +115,7 @@ export default function App() {
       setErrorMessage("Internal error: Formatting info lost during polling setup.");
       setIsLoading(false);
       setPlanTaskId(null);
+      setIsPreviewActive(false);
       return;
     }
     console.log(`Checking status for task: ${taskId}`);
@@ -103,22 +124,13 @@ export default function App() {
       console.log("Poll response:", statusResponse);
 
       if (statusResponse.status === "completed") {
-        console.log("Plan generation completed!");
+        console.log("Plan generation completed! Initiating preview...");
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        clearProgressInterval(); // Stop fake progress
-        setPlanProgress(100); // SET progress to 100%
+        clearProgressInterval();
+        setPlanProgress(100);
 
-        setFinalPlanData({
-          backendResult: statusResponse.result,
-          formatting: formatting,
-        });
-        setPlanOps(statusResponse.result.ops || []);
-        
-        // Delay resetting isLoading slightly to allow 100% to show
-        setTimeout(() => { 
-           setIsLoading(false); 
-           setPlanTaskId(null);
-        }, 300); // Short delay (e.g., 300ms)
+        await showPreview(statusResponse.result, formatting);
+        setPlanTaskId(null);
       } else if (statusResponse.status === "failed") {
         console.error("Plan generation failed:", statusResponse.error);
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
@@ -127,7 +139,8 @@ export default function App() {
         setPlanTaskId(null);
         setCapturedFormatting(null);
         setFinalPlanData(null);
-        clearProgressInterval(); // Stop progress on failure
+        setIsPreviewActive(false);
+        clearProgressInterval();
       } else {
         console.log("Plan still processing...");
       }
@@ -139,7 +152,8 @@ export default function App() {
       setPlanTaskId(null);
       setCapturedFormatting(null);
       setFinalPlanData(null);
-      clearProgressInterval(); // Stop progress on error
+      setIsPreviewActive(false);
+      clearProgressInterval();
     }
   };
 
@@ -148,12 +162,11 @@ export default function App() {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
-      clearProgressInterval(); // Also clear progress interval
+      clearProgressInterval();
     };
   }, []);
 
   const handleGeneratePlan = async () => {
-    // --- First step: Get/Confirm selected range address ---
     let currentAddress = selectedRangeAddress;
     if (!currentAddress) {
       setIsLoading(true);
@@ -163,7 +176,6 @@ export default function App() {
         const address = await sheetConnector.getSelectedRangeAddress();
         setSelectedRangeAddress(address);
         console.log("Selected range address confirmed:", address);
-        // Update local variable for use below if address was just fetched
         currentAddress = address;
       } catch (error: any) {
         console.error("Error getting selected range address:", error);
@@ -172,29 +184,32 @@ export default function App() {
       } finally {
         setIsLoading(false);
       }
-      return; // Return if we only fetched the address this time
+      return;
     }
 
-    // --- If address is confirmed, proceed to generate plan ---
     setIsLoading(true);
     setErrorMessage(null);
-    setFinalPlanData(null); 
-    setCapturedFormatting(null); 
+    setFinalPlanData(null);
+    setIsPreviewActive(false);
+    setCapturedFormatting(null);
     clearProgressInterval();
-    setPlanProgress(5); 
+    setPlanProgress(5);
 
     try {
-      console.log(`Reading sheet data from confirmed range: ${currentAddress}...`);
+      console.log("*** Entered handleGeneratePlan try block ***");
+
+      console.log(`Attempting to read sheet data from confirmed range: ${currentAddress}...`);
+      console.log("Calling sheetConnector.getRangeData...");
       const sheetData = await sheetConnector.getRangeData(currentAddress);
+      console.log("sheetConnector.getRangeData finished successfully.");
       console.log("Sheet data read from confirmed range.");
 
-      // No need to format here, backend expects raw data
-      // const formattedSheetData = sheetData.map(row =>
-      //   row.map(cell => cell === null || cell === undefined ? "" : String(cell))
-      // );
+      console.log("*** Sending to /plan endpoint ***");
+      console.log("Slots:", JSON.stringify(slots, null, 2));
+      console.log("Sheet Data Snippet:", JSON.stringify(sheetData.slice(0, 5), null, 2));
+      console.log("Range Address:", currentAddress);
 
       console.log("Requesting plan generation and capturing formatting...");
-      // Call generatePlan WITH the sheetConnector instance
       const initialResponse = await chatService.generatePlan(
         slots,
         sheetData,
@@ -204,18 +219,15 @@ export default function App() {
 
       if (initialResponse && initialResponse.task_id && initialResponse.rangeFormatting) {
         console.log(`Plan generation started with Task ID: ${initialResponse.task_id}`);
-        // Store the captured formatting in state
         setCapturedFormatting(initialResponse.rangeFormatting);
         setPlanTaskId(initialResponse.task_id);
         setIsLoading(true);
-        // Clear previous interval if any
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
 
-        // --- Start Fake Progress Interval (Faster) ---
-        const totalDurationSeconds = 20; // REDUCED target duration
-        const intervalDelay = 500; 
+        const totalDurationSeconds = 20;
+        const intervalDelay = 500;
         const increments = (totalDurationSeconds * 1000) / intervalDelay;
-        const progressStep = 95 / increments; 
+        const progressStep = 95 / increments;
 
         progressIntervalRef.current = setInterval(() => {
           setPlanProgress(prev => {
@@ -223,98 +235,107 @@ export default function App() {
              return Math.min(nextProgress, 99); 
           });
         }, intervalDelay);
-        // ------------------------------------------
 
-        // Start polling interval (keep existing logic)
         pollingIntervalRef.current = setInterval(() => {
           checkPlanStatus(initialResponse.task_id, initialResponse.rangeFormatting);
-        }, 10000); 
+        }, 10000);
       } else {
         throw new Error("Failed to start plan generation task or capture formatting.");
       }
     } catch (error: any) {
-      console.error("Error during plan generation setup:", error); // Clarified log
+      console.error("Error during plan generation setup:", error);
       setErrorMessage(error.message || "Failed to generate plan. Please check logs.");
       setIsLoading(false);
       setPlanTaskId(null);
-      setCapturedFormatting(null); // Clear formatting on error too
-      clearProgressInterval(); // Clear progress on setup error
+      setCapturedFormatting(null);
+      setIsPreviewActive(false);
+      clearProgressInterval();
     }
   };
 
-  const handleApplyPlan = async (approvedOps: ActionOp[]) => {
-    // We might not need approvedOps if we apply the whole result directly
-    // Keep it for now in case PreviewPane filtering is still desired, but we'll use finalPlanData
+  const handleAcceptPreview = async () => {
     if (!finalPlanData) {
-      setErrorMessage("Cannot apply plan: missing final plan data or formatting.");
+      setErrorMessage("Cannot accept plan: missing final plan data or formatting.");
       return;
     }
-    // Maybe check approvedOps length if filtering is implemented in PreviewPane?
-    // if (!approvedOps || approvedOps.length === 0) {
-    //     setErrorMessage("No operations selected to apply.");
-    //     return;
-    // }
-
     setIsApplyingPlan(true);
     setErrorMessage(null);
-    setSuccessMessage(null); // Clear previous success message
+    setSuccessMessage(null);
+    console.log("Attempting to accept preview by applying final plan...");
     try {
-      console.log("Applying formatted plan with:", finalPlanData);
-      
-      await sheetConnector.applyFormattedPlan(
+      await sheetConnector.acceptPreview(
         finalPlanData.backendResult,
         finalPlanData.formatting
       );
       
-      console.log("Formatted plan applied successfully.");
+      console.log("Preview accepted and final plan applied.");
       
-      // --- Show Success Notification --- 
       setSuccessMessage("Plan applied successfully!");
       setTimeout(() => {
           setSuccessMessage(null);
-          // Reset UI state AFTER success message fades
-          setPlanOps([]); 
+          setPlanOps([]);
           setFinalPlanData(null);
           setCapturedFormatting(null);
-          setIsReady(false); 
+          setIsPreviewActive(false);
+          setIsReady(false);
           setSelectedRangeAddress(null);
           setSlots({ roundType: undefined, amount: undefined, preMoney: undefined, poolPct: undefined});
-      }, 2500); // Show message for 2.5 seconds
-      // ----------------------------------
-
-      // Don't reset state immediately, wait for timeout above
-      // setPlanOps([]); 
-      // setFinalPlanData(null);
-      // ...
+      }, 2500);
       
     } catch (error: any) {
-      console.error('Error applying formatted plan:', error);
-      setErrorMessage(error.message || 'Failed to apply formatted plan. Check console.');
+      console.error('Error accepting preview:', error);
+      setErrorMessage(error.message || 'Failed to accept preview. Check console.');
     } finally {
-      // Set applying to false immediately, but delay other state resets
       setIsApplyingPlan(false);
+    }
+  };
+
+  const handleRejectPreview = async () => {
+    setIsRejectingPreview(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    console.log("Attempting to reject preview...");
+    try {
+      await sheetConnector.rejectPreview();
+      console.log("Preview rejected and changes reverted.");
+      
+      setMessages(prev => [...prev, { role: 'assistant', message: 'Preview rejected. You can modify parameters or selection and try again.' }]);
+      
+      setFinalPlanData(null);
+      setPlanOps([]);
+      setIsPreviewActive(false);
+      setCapturedFormatting(null);
+      setSelectedRangeAddress(null);
+      setIsReady(true);
+      
+    } catch (error: any) {
+      console.error("Error rejecting preview:", error);
+      setErrorMessage(`Failed to reject preview: ${error.message}. Manual cleanup might be needed.`);
+      setFinalPlanData(null);
+      setPlanOps([]);
+      setIsPreviewActive(false);
+    } finally {
+      setIsRejectingPreview(false);
     }
   };
 
   const handleSendMessage = async (userMessage: string) => {
     if (!userMessage.trim()) return;
 
-    // Add user message to history immediately
     setMessages(prev => [...prev, { role: 'user', message: userMessage }]);
     setErrorMessage(null);
-    setIsLoading(true); // General loading state
-    setIsAssistantThinking(true); // Specific state for chat response
-    setPendingAssistantMessage(null); // Clear any pending message
-    setDisplayedAssistantMessage(""); // Clear displayed message
+    setIsLoading(true);
+    setIsAssistantThinking(true);
+    setPendingAssistantMessage(null);
+    setDisplayedAssistantMessage("");
 
     try {
       const response: ChatResponse = await chatService.sendMessage(userMessage);
       
-      setIsAssistantThinking(false); // Assistant is no longer thinking
-      setIsLoading(false); // Turn off general loading
+      setIsAssistantThinking(false);
+      setIsLoading(false);
 
       if (response.assistantMessage) {
-         // Instead of adding directly, set it as pending for streaming
          setPendingAssistantMessage(response.assistantMessage);
       }
 
@@ -323,6 +344,9 @@ export default function App() {
       }
 
       if (response.ready) {
+        setFinalPlanData(null);
+        setIsPreviewActive(false);
+        setPlanOps([]);
         handleSlotsReady(response.slotsFilled);
       }
 
@@ -334,7 +358,6 @@ export default function App() {
     }
   };
 
-  // Effect for simulating streaming text
   useEffect(() => {
     if (streamingIntervalRef.current) {
       clearInterval(streamingIntervalRef.current);
@@ -342,52 +365,43 @@ export default function App() {
     }
 
     if (pendingAssistantMessage) {
-      setDisplayedAssistantMessage(""); // Start fresh
+      setDisplayedAssistantMessage("");
       let index = 0;
-      const message = pendingAssistantMessage; // Capture current pending message
+      const message = pendingAssistantMessage;
 
       streamingIntervalRef.current = setInterval(() => {
         if (index < message.length) {
-          // Append character by character (adjust speed with interval delay)
           setDisplayedAssistantMessage(prev => message.substring(0, index + 1));
           index++;
         } else {
-          // Finished streaming
           if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
           streamingIntervalRef.current = null;
           
-          // Add the completed message to the main history (NO flag needed)
           setMessages(prev => [...prev, { role: 'assistant', message }]);
           
-          // Clear pending/displayed state
           setPendingAssistantMessage(null); 
           setDisplayedAssistantMessage(""); 
         }
       }, 50); 
     }
 
-    // Cleanup function to clear interval if component unmounts or pending message changes
     return () => {
       if (streamingIntervalRef.current) {
         clearInterval(streamingIntervalRef.current);
         streamingIntervalRef.current = null;
       }
     };
-  }, [pendingAssistantMessage]); // Re-run effect when pendingAssistantMessage changes
+  }, [pendingAssistantMessage]);
+
+  const isPreviewPaneBusy = isLoading || isApplyingPlan || isPreviewing || isRejectingPreview;
 
   return (
-    // Use ms-Fabric for some basic Office styling, add padding
     <div className="app" dir="ltr" style={appStyles.container}>
-      {/* <SlotStatusBar slots={slots} /> */}
-      {/* Remove rendering */}
-
-      {/* Add flex-grow to ChatView/PreviewPane containers */}
       <div
         id="react-container"
         className="flex flex-col justify-center"
         style={appStyles.mainContent}
       >
-        {/* Restore conditional rendering */}
         {!isReady && !finalPlanData && (
           <ChatView
             messages={messages}
@@ -409,12 +423,11 @@ export default function App() {
                 </p>
                 {selectedRangeAddress && (
                   <button 
-                    style={{marginRight: '10px'}} // Keep inline margin
-                    // Add dynamic className for loading state
-                    className={`rounded-lg px-4 py-2 cursor-pointer ${ // Added padding
+                    style={{marginRight: '10px'}}
+                    className={`rounded-lg px-4 py-2 cursor-pointer ${
                       isLoading
-                        ? "bg-gray-700 text-gray-400 cursor-not-allowed" // Loading style
-                        : "bg-gray-200 text-black hover:bg-gray-300" // Secondary button style (non-loading)
+                        ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                        : "bg-gray-200 text-black hover:bg-gray-300"
                     }`}
                     onClick={() => setSelectedRangeAddress(null)} 
                     disabled={isLoading}
@@ -423,54 +436,47 @@ export default function App() {
                   </button>
                 )}
                 <button 
-                  // RESTORE original inline style logic
                   style={isLoading ? {...appStyles.button, ...appStyles.buttonDisabled} : appStyles.button}
-                  // Keep className for basic structure (padding, rounded corners)
-                  className={`rounded-lg px-4 py-2 cursor-pointer ${ // Use non-conditional part of class if needed, or remove if style handles everything
+                  className={`rounded-lg px-4 py-2 cursor-pointer ${
                     isLoading
-                      ? "cursor-not-allowed" // Only add cursor style if needed
-                      : "hover:bg-gray-800" // Add hover effect if style doesn't provide one
+                      ? "cursor-not-allowed"
+                      : "hover:bg-gray-800"
                   }`}
                   onClick={handleGeneratePlan} 
                   disabled={isLoading}
                 >
                   {isLoading 
-                    ? (planTaskId ? 'Generating Plan (takes ~1min)...': 'Getting Selection...') 
+                    ? (planTaskId ? 'Generating Plan (takes ~1min)...': (isPreviewing ? 'Applying Preview...': 'Getting Selection...'))
                     : (selectedRangeAddress ? 'Confirm and Generate Plan' : 'Get Selected Range')}
                 </button>
             </div>
         )}
 
-        {/* Show PreviewPane if final plan data IS available */}
         {finalPlanData && (
           <PreviewPane
-            ops={finalPlanData.backendResult.ops} // Pass ops from finalPlanData
-            onApply={handleApplyPlan}
-            isLoading={isLoading || isApplyingPlan}
+            ops={finalPlanData.backendResult.ops}
+            onAccept={handleAcceptPreview}
+            onReject={handleRejectPreview}
+            isLoading={isPreviewPaneBusy}
             isApplying={isApplyingPlan}
           />
         )}
       </div>
 
-      {/* Footer for messages */}
       <div style={appStyles.footer}>
-        {/* Show Success Message */}
         {successMessage && (
            <div style={appStyles.successMessage}>{successMessage}</div>
         )}
-        {/* Show Error Message (only if no success message) */}
         {errorMessage && !successMessage && (
             <div style={appStyles.errorMessage}>Error: {errorMessage}</div>
         )}
-        {/* Show Progress Bar (only if no success/error) */}
-        {isLoading && planTaskId && !finalPlanData && !errorMessage && !successMessage && (
-           // Render Progress Bar when plan is generating
+        {isLoading && planTaskId && !errorMessage && !successMessage && (
            <div style={appStyles.progressBarContainer}>
              <div 
-               style={{...appStyles.progressBarFill, width: `${planProgress}%`}} 
+               style={{...appStyles.progressBarFill, width: `${planProgress}%`}}
              />
              <span style={appStyles.progressBarText}>
-               Generating plan... ({Math.round(planProgress)}%)
+               {`Generating plan... (${Math.round(planProgress)}%)`}
              </span>
            </div>
         )}
@@ -479,7 +485,6 @@ export default function App() {
   );
 }
 
-// Basic inline styles (consider moving to CSS Modules or a styled-components approach later)
 const appStyles: { [key: string]: React.CSSProperties } = {
   container: {
     display: "flex",
@@ -487,16 +492,14 @@ const appStyles: { [key: string]: React.CSSProperties } = {
     height: "100vh",
     padding: "15px",
     boxSizing: "border-box",
-    fontFamily: '"Segoe UI", system-ui, sans-serif', // Use Office Fabric font
-    // backgroundColor: 'lightblue' // DEBUG: Remove Container background
+    fontFamily: '"Segoe UI", system-ui, sans-serif',
   },
   mainContent: {
     flexGrow: 1,
     display: "flex",
     flexDirection: "column",
-    overflowY: "auto", // Allow content to scroll if needed
+    overflowY: "auto",
     marginBottom: "10px",
-    // backgroundColor: 'lightcoral' // DEBUG: Remove Main content background
   },
   planTriggerContainer: {
     padding: "15px",
@@ -517,7 +520,7 @@ const appStyles: { [key: string]: React.CSSProperties } = {
   },
   button: {
     padding: "8px 16px",
-    backgroundColor: "#000", // Office blue
+    backgroundColor: "#000",
     color: "white",
     border: "none",
     borderRadius: "2px",
@@ -530,14 +533,14 @@ const appStyles: { [key: string]: React.CSSProperties } = {
     border: "1px solid #ccc",
   },
   buttonDisabled: {
-    backgroundColor: "#c7e0f4", // Lighter blue
+    backgroundColor: "#c7e0f4",
     cursor: "not-allowed",
   },
   footer: {
     minHeight: '60px', 
     marginTop: 'auto', 
     paddingTop: '10px', 
-    position: 'relative' // Needed for positioning success message maybe
+    position: 'relative'
   },
   errorMessage: {
       color: '#a80000',
@@ -547,29 +550,28 @@ const appStyles: { [key: string]: React.CSSProperties } = {
       backgroundColor: '#fde7e9', 
       borderRadius: '2px'
   },
-  successMessage: { // Style for success notification
-      color: '#155724', // Dark green
-      backgroundColor: '#d4edda', // Light green
+  successMessage: {
+      color: '#155724',
+      backgroundColor: '#d4edda',
       border: '1px solid #c3e6cb',
       padding: '10px',
       borderRadius: '4px',
       textAlign: 'center',
       marginTop: '10px',
-      // Optional: Add fade-out animation later
   },
   progressBarContainer: {
       height: '20px',
-      backgroundColor: '#e0e0e0', // Light grey background
+      backgroundColor: '#e0e0e0',
       borderRadius: '10px',
       overflow: 'hidden',
-      position: 'relative', // Needed for text overlay
+      position: 'relative',
       marginTop: '10px'
   },
   progressBarFill: {
       height: '100%',
-      backgroundColor: '#0078d4', // Office blue
-      borderRadius: '10px 0 0 10px', // Keep left edge rounded
-      transition: 'width 0.4s ease-in-out' // Smooth transition for width change
+      backgroundColor: '#0078d4',
+      borderRadius: '10px 0 0 10px',
+      transition: 'width 0.4s ease-in-out'
   },
   progressBarText: {
       position: 'absolute',
@@ -578,8 +580,8 @@ const appStyles: { [key: string]: React.CSSProperties } = {
       top: '50%',
       left: '50%',
       transform: 'translate(-50%, -50%)',
-      color: '#fff', // White text
-      mixBlendMode: 'difference', // Makes text visible on blue/grey bg
+      color: '#fff',
+      mixBlendMode: 'difference',
       fontSize: '0.8em',
       lineHeight: '20px'
   }
