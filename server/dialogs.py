@@ -17,6 +17,7 @@ class Session(BaseModel):
     }
     history: List[Dict[str, str]] = []
     last_prompted_slot: Optional[str] = None
+    is_modeling: bool = False
 
     def __init__(self, **data):
         if 'session_id' not in data:

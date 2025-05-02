@@ -1,8 +1,19 @@
-import { SheetConnector, RangeFormatting } from "../SheetConnector";
+import { SheetConnector, RangeFormatting, ActionOp } from "../SheetConnector";
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
   message: string;
+  ready?: boolean;
+}
+
+export interface UnifiedChatResponse {
+  sessionId: string;
+  assistantMessage?: string;
+  slotsFilled?: any;
+  ready?: boolean;
+  directOps?: ActionOp[];
+  message?: string;
+  error?: string;
 }
 
 export interface ChatResponse {
@@ -24,7 +35,7 @@ export class ChatService {
     this.baseUrl = baseUrl;
   }
 
-  async sendMessage(message: string): Promise<ChatResponse> {
+  async sendMessage(message: string): Promise<UnifiedChatResponse> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
@@ -54,7 +65,7 @@ export class ChatService {
         this.sessionId = data.sessionId;
       }
 
-      return data;
+      return data as UnifiedChatResponse;
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
