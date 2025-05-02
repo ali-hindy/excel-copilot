@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { ChatView, ChatMessage } from "./components/ChatView";
 import { PreviewPane } from "./components/PreviewPane";
 import { SheetConnector, ActionOp, RangeFormatting, BackendPlanResult } from "./SheetConnector";
-import { ChatService, ChatResponse } from "./services/chatService";
+import { ChatService, UnifiedChatResponse } from "./services/chatService";
 
 // Interface for the final combined data needed for applying the formatted plan
 interface FinalPlanData {
@@ -21,7 +21,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', message: 'Hello! How can I help you model your cap table today? (e.g., \"Model Series A\")' }
+    { role: 'assistant', message: 'Hello! How can I help you model today? (e.g., \"Model Series A\")' }
   ]);
   const [planOps, setPlanOps] = useState<ActionOp[]>([]);
   const [selectedRangeAddress, setSelectedRangeAddress] = useState<string | null>(null);
@@ -261,16 +261,36 @@ export default function App() {
     setIsApplyingPlan(true);
     setErrorMessage(null);
     setSuccessMessage(null);
-    console.log("Attempting to accept preview by applying final plan...");
+
     try {
-      await sheetConnector.acceptPreview(
-        finalPlanData.backendResult,
-        finalPlanData.formatting
-      );
+      const isDirectAction = finalPlanData.formatting.address === 'DirectAction';
+
+      if (isDirectAction) {
+        console.log("Applying direct operations...");
+        const opsToApply = finalPlanData.backendResult.ops;
+        if (!opsToApply || opsToApply.length === 0) {
+           throw new Error("No direct operations found to apply.");
+        }
+        await sheetConnector.rejectPreview(); 
+        console.log("Preview reverted, now applying direct ops...");
+        await sheetConnector.applyOps(opsToApply);
+        console.log("Direct operations applied successfully.");
+
+        setMessages(prev => [...prev, {
+           role: 'assistant',
+           message: 'Complete! Can I help you model anything else?'
+        }]);
+
+      } else {
+        console.log("Accepting preview by applying final formatted plan...");
+        await sheetConnector.acceptPreview(
+          finalPlanData.backendResult,
+          finalPlanData.formatting
+        );
+        console.log("Preview accepted and final formatted plan applied.");
+      }
       
-      console.log("Preview accepted and final plan applied.");
-      
-      setSuccessMessage("Plan applied successfully!");
+      setSuccessMessage("Changes applied successfully!");
       setTimeout(() => {
           setSuccessMessage(null);
           setPlanOps([]);
@@ -283,8 +303,8 @@ export default function App() {
       }, 2500);
       
     } catch (error: any) {
-      console.error('Error accepting preview:', error);
-      setErrorMessage(error.message || 'Failed to accept preview. Check console.');
+      console.error('Error accepting changes:', error);
+      setErrorMessage(error.message || 'Failed to apply changes. Check console.');
     } finally {
       setIsApplyingPlan(false);
     }
@@ -330,24 +350,46 @@ export default function App() {
     setDisplayedAssistantMessage("");
 
     try {
-      const response: ChatResponse = await chatService.sendMessage(userMessage);
+      const response: UnifiedChatResponse = await chatService.sendMessage(userMessage);
       
       setIsAssistantThinking(false);
       setIsLoading(false);
 
-      if (response.assistantMessage) {
-         setPendingAssistantMessage(response.assistantMessage);
-      }
+      if (response.directOps && response.directOps.length > 0) {
+        console.log("Received direct operations:", response.directOps);
+        setPlanOps(response.directOps);
+        setFinalPlanData({
+            backendResult: { ops: response.directOps, slots: null, calculated_values: null, column_mapping: null },
+            formatting: { address: 'DirectAction', rowCount: 0, columnCount: 0 }
+        });
+        setIsPreviewActive(true);
+        setIsReady(false);
+        setErrorMessage(null);
 
-      if (response.slotsFilled) {
-        setSlots(response.slotsFilled);
-      }
+      } else if (response.error) {
+         console.error("Backend returned an error:", response.error);
+         setErrorMessage(response.error);
+         setMessages(prev => [...prev, { role: 'assistant', message: response.message || response.error }]);
 
-      if (response.ready) {
-        setFinalPlanData(null);
-        setIsPreviewActive(false);
-        setPlanOps([]);
-        handleSlotsReady(response.slotsFilled);
+      } else if (response.message && !response.assistantMessage && !response.ready) {
+           console.log("Backend returned a simple message:", response.message);
+           setMessages(prev => [...prev, { role: 'assistant', message: response.message }]);
+
+      } else {
+        if (response.assistantMessage) {
+          setPendingAssistantMessage(response.assistantMessage);
+        }
+
+        if (response.slotsFilled) {
+          setSlots(response.slotsFilled);
+        }
+
+        if (response.ready) {
+          setFinalPlanData(null);
+          setIsPreviewActive(false);
+          setPlanOps([]); 
+          handleSlotsReady(response.slotsFilled);
+        }
       }
 
     } catch (error: any) {

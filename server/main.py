@@ -9,12 +9,19 @@ import uuid
 from fastapi.responses import JSONResponse
 import re
 
-# Import LLM functions
-from model import generate_plan_raw_text, get_llm, parse_column_mapping
+# Import LLM functions using absolute imports from project root
+from model import (
+    generate_plan_raw_text,
+    get_llm,
+    parse_column_mapping,
+    generate_custom_plan_raw_text,
+    parse_custom_llm_output_to_ops,
+    parse_direct_command_to_ops
+)
 from dialogs import get_or_create_session, process_message
 
 # Add import for custom operations functions
-from model import generate_custom_plan_raw_text, parse_custom_llm_output_to_ops
+# from model import generate_custom_plan_raw_text, parse_custom_llm_output_to_ops # Removed duplicate
 
 app = FastAPI()
 
@@ -65,11 +72,12 @@ class ChatRequest(BaseModel):
     message: str
 
 
-class ChatResponse(BaseModel):
-    sessionId: str
-    assistantMessage: str
-    slotsFilled: dict
-    ready: bool
+# --- Keep original ChatResponse for process_message return type hinting if needed, or remove if unused ---
+# class ChatResponse(BaseModel):
+#     sessionId: str
+#     assistantMessage: str
+#     slotsFilled: dict
+#     ready: bool
 
 
 class PlanRequest(BaseModel):
@@ -87,6 +95,20 @@ class ActionOp(BaseModel):
     values: List[List[Any]] | None = None  # Allow Any in values
     formula: str | None = None
     note: str | None = None
+
+
+# --- NEW Unified Response Model for /chat ---
+class UnifiedChatResponse(BaseModel):
+    sessionId: str
+    # Fields for slot-filling/modeling flow
+    assistantMessage: Optional[str] = None
+    slotsFilled: Optional[dict] = None
+    ready: Optional[bool] = None
+    # Field for direct actions
+    directOps: Optional[List[ActionOp]] = None
+    # General status/error message?
+    message: Optional[str] = None
+    error: Optional[str] = None
 
 
 class PlanResponse(BaseModel):
@@ -122,32 +144,112 @@ async def health_check():
     return {"status": "ok", "message": "Server is running"}
 
 
-@app.post("/chat", response_model=ChatResponse)
+# --- MODIFIED /chat Endpoint ---
+@app.post("/chat", response_model=UnifiedChatResponse) # <-- Use new response model
 async def chat(request: ChatRequest):
-    """
-    Handles the chat interaction and slot filling process.
-    """
+    session_id = None # Keep track of session id
+    session: Optional['Session'] = None # Ensure session is defined in scope
     try:
-        print(f"\n=== Chat Endpoint ===")
+        print(f"\n=== Chat Endpoint === [Stateful]") # Renamed log
         print(f"Request sessionId: {request.sessionId}")
         print(f"Request message: {request.message}")
 
-        # Get or create session
         session = get_or_create_session(request.sessionId)
-        print(f"Using session: {session.session_id}")
-        print(f"Current slots: {session.slots}")
+        session_id = session.session_id # Store session id
+        print(f"Using session: {session_id}. is_modeling: {session.is_modeling}") # Log state
 
-        # Process the message and get response
-        response = process_message(session, request.message)
+        # Check 1: Are we currently in a modeling flow?
+        if session.is_modeling:
+            print("Session is in modeling state. Proceeding with slot-filling logic.")
+            # Call the existing dialog processing function
+            response_data = process_message(session, request.message)
+            print(f"Slot-filling response: {response_data}")
+            
+            # If process_message indicates completion, reset the flag
+            if response_data.get("ready"): 
+                print("Modeling complete. Resetting session state.")
+                session.is_modeling = False
+                # Optional: Persist session change if needed for your session store
+                # sessions[session.session_id] = session # For simple dict store
+            
+            # Return using the UnifiedChatResponse structure
+            return UnifiedChatResponse(
+                sessionId=response_data.get("sessionId", session_id),
+                assistantMessage=response_data.get("assistantMessage"),
+                slotsFilled=response_data.get("slotsFilled"),
+                ready=response_data.get("ready", False) # Ensure ready has a default
+            )
 
-        print(f"Response sessionId: {response['sessionId']}")
-        print(f"Response slots: {response['slotsFilled']}")
-        print("=== End Chat Endpoint ===\n")
+        # Check 2: If not modeling, does the NEW message trigger modeling?
+        elif re.search(r'\bmodel\b', request.message, re.IGNORECASE):
+            print("Keyword 'model' detected. Starting modeling flow.")
+            session.is_modeling = True # Set the flag
+            # Optional: Persist session change if needed
+            # sessions[session.session_id] = session 
+            
+            # Call the existing dialog processing function
+            response_data = process_message(session, request.message)
+            print(f"Slot-filling response (initial): {response_data}")
+            
+            # Check if somehow the first message already filled all slots
+            if response_data.get("ready"): 
+                print("Modeling complete on first message. Resetting session state.")
+                session.is_modeling = False
+                # Optional: Persist session change if needed
+                # sessions[session.session_id] = session 
+            
+            # Return using the UnifiedChatResponse structure
+            return UnifiedChatResponse(
+                sessionId=response_data.get("sessionId", session_id),
+                assistantMessage=response_data.get("assistantMessage"),
+                slotsFilled=response_data.get("slotsFilled"),
+                ready=response_data.get("ready", False)
+            )
 
-        return response
+        # Check 3: Otherwise (not modeling and no keyword), it's a direct command
+        else:
+            print("Neither modeling state nor keyword detected. Attempting direct action parsing.")
+            # Call the function to generate ops from the message
+            direct_ops_list = await generate_direct_ops(request.message)
+
+            if direct_ops_list:
+                print(f"Generated direct ops: {direct_ops_list}")
+                # Validate ops (optional but recommended)
+                try:
+                    validated_ops = [ActionOp(**op) for op in direct_ops_list]
+                    return UnifiedChatResponse(
+                        sessionId=session_id,
+                        directOps=[op.dict() for op in validated_ops] # Return validated ops
+                    )
+                except ValidationError as e:
+                     print(f"ERROR: Direct ops failed Pydantic validation: {e}")
+                     # Fall through to return error/message
+                     return UnifiedChatResponse(
+                         sessionId=session_id,
+                         error="Failed to generate valid operations from the command.",
+                         message="Sorry, there was an issue generating operations for that command."
+                     )
+            else:
+                # Handle cases where the direct command wasn't understood
+                print("Could not parse direct command or no ops generated.")
+                return UnifiedChatResponse(
+                    sessionId=session_id,
+                    message="Sorry, I couldn't understand that command. Try phrasing it differently, or use the keyword 'model' for cap table analysis."
+                )
+
     except Exception as e:
-        print(f"ERROR in chat endpoint: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"ERROR in stateful chat endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        # Ensure session_id is included in error response if possible
+        error_session_id = session.session_id if session else (request.sessionId or "unknown")
+        return UnifiedChatResponse(
+             sessionId=error_session_id,
+             error=f"An internal error occurred: {str(e)}"
+        )
+
+    finally:
+         print("=== End Stateful Chat Endpoint ===\n")
 
 
 # --- Background Task Definition ---
@@ -842,6 +944,22 @@ def build_structured_ops(
         ops = []  # Return empty on error for now
 
     return ops
+
+
+# --- Placeholder for direct command parsing function ---
+# Replace placeholder with call to the actual implementation in model.py
+async def generate_direct_ops(message: str) -> List[Dict]:
+    """Calls the model module to parse the direct command into ActionOps."""
+    # TODO: Potentially make parse_direct_command_to_ops async if LLM call becomes async
+    # For now, assuming the LlamaCPP interface is synchronous from FastAPI's perspective
+    logger.info(f"Calling model.parse_direct_command_to_ops for: '{message}'")
+    try:
+        ops_list = parse_direct_command_to_ops(message)
+        logger.info(f"Received {len(ops_list)} ops from model.parse_direct_command_to_ops")
+        return ops_list
+    except Exception as e:
+        logger.error(f"Error calling parse_direct_command_to_ops: {e}", exc_info=True)
+        return [] # Return empty list on error
 
 
 @app.post("/plan")

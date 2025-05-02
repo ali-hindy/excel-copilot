@@ -5,6 +5,9 @@ from llama_cpp import Llama
 from typing import List, Dict, Any  # Added Dict, Any
 import logging # Import logging
 
+# Import the new prompt using absolute import from project root
+from prompts import DIRECT_COMMAND_PROMPT
+
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
@@ -248,13 +251,95 @@ def parse_column_mapping(raw_text: str) -> Dict[str, Any]:
 
     except json.JSONDecodeError as e:
         print(f"ERROR: Failed to decode JSON column mapping from extracted block: {e}")
-        print("--- Faulty JSON String Attempted ---:")
-        print(json_str)
-        print("-----------------------------------")
-        raise ValueError(f"LLM output block contained invalid JSON after fixing attempts: {e}")
+        print(f"Raw JSON string attempted: {json_str}")
+        raise ValueError(f"Failed to decode JSON from LLM output block: {e}")
     except TypeError as e:
-        print(f"ERROR: Parsed JSON logic error: {e}")
-        raise ValueError(f"LLM did not return a valid JSON dictionary for column mapping: {e}")
+        print(f"ERROR: Parsed JSON is not a dictionary: {e}")
+        raise ValueError(f"LLM output was not a dictionary: {e}")
+    except Exception as e: # Catch any other unexpected error during parsing
+        print(f"ERROR: Unexpected error parsing LLM column mapping: {e}")
+        raise
+
+
+# --- NEW: Function to Parse Direct Commands to ActionOps --- 
+def parse_direct_command_to_ops(user_message: str) -> List[Dict[str, Any]]:
+    """
+    Uses the LLM to translate a natural language command into a list of ActionOp dictionaries.
+    """
+    client = get_llm()
+    full_prompt = DIRECT_COMMAND_PROMPT.format(user_message=user_message)
+
+    logger.info(f"\n--- Sending Direct Command Prompt to LLM ---")
+    logger.debug(f"Prompt: {full_prompt}") # Log full prompt only in debug
+
+    try:
+        response = client.create_completion(
+            prompt=full_prompt,
+            max_tokens=512,  # Adjust as needed, operations list shouldn't be huge
+            temperature=0.1, # Low temperature for deterministic JSON output
+            stop=["```", "[/INST]"], # Stop at the end of the JSON block
+            echo=False,
+        )
+        # Log the full response object for deeper debugging
+        logger.error(f"\n--- LLM Full Direct Command Response [DEBUG] ---\n{response}\n----------------------\n")
+        raw_output = response["choices"][0]["text"].strip()
+        # Temporarily log raw output as ERROR to ensure visibility
+        logger.error(f"\n--- LLM Raw Direct Command Output [DEBUG] ---\n'{raw_output}'\n----------------------\n")
+
+    except Exception as e:
+        logger.error(f"Error during LLM call for direct command: {e}", exc_info=True)
+        return [] # Return empty list on LLM error
+
+    # --- Extract JSON block (```json ... ```) ---
+    match = re.search(r"```json\s*(\[.*?\])\s*```", raw_output, re.DOTALL | re.IGNORECASE)
+    if not match:
+        # Fallback: Try finding just the list brackets if markdown block fails
+        start_index = raw_output.find('[')
+        end_index = raw_output.rfind(']')
+        if start_index != -1 and end_index != -1 and end_index > start_index:
+            json_str = raw_output[start_index : end_index + 1]
+            logger.warning("Could not find ```json block, attempting fallback to raw list [...] extraction.")
+        else:
+             logger.error(f"Could not find JSON list block (```json [...] ``` or [...]) in LLM output: {raw_output}")
+             return [] # Return empty if no JSON list found
+    else:
+        json_str = match.group(1)
+        logger.info(f"Extracted JSON block: {json_str}")
+
+    # --- Parse the extracted JSON list ---
+    try:
+        # Basic cleaning
+        json_str = json_str.strip()
+        parsed_ops = json.loads(json_str)
+
+        if not isinstance(parsed_ops, list):
+            raise TypeError("Parsed JSON is not a list.")
+
+        # Basic validation of list items (optional, Pydantic does more later)
+        validated_ops = []
+        for i, op in enumerate(parsed_ops):
+            if not isinstance(op, dict):
+                logger.warning(f"Skipping invalid item #{i} in parsed list (not a dict): {op}")
+                continue
+            # Check for required keys (id, range, type)
+            if not all(k in op for k in ['id', 'range', 'type']):
+                 logger.warning(f"Skipping invalid item #{i} (missing required keys): {op}")
+                 continue
+            validated_ops.append(op)
+
+        logger.info(f"Successfully parsed {len(validated_ops)} direct command operations.")
+        return validated_ops
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON direct ops list from extracted block: {e}")
+        logger.error(f"Extracted string attempted: {json_str}")
+        return [] # Return empty list on decode error
+    except TypeError as e:
+        logger.error(f"Parsed JSON for direct ops was not a list: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Unexpected error parsing JSON direct ops list: {e}", exc_info=True)
+        return [] # Return empty list on unexpected error
 
 
 # --- Custom Operations Functions ---
